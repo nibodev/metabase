@@ -1,5 +1,3 @@
-/* @flow */
-
 import React, { Component } from "react";
 import ReactMarkdown from "react-markdown";
 import styles from "./Text.css";
@@ -9,7 +7,7 @@ import Icon from "metabase/components/Icon";
 import cx from "classnames";
 import { t } from "ttag";
 
-import type { VisualizationProps } from "metabase/meta/types/Visualization";
+import type { VisualizationProps } from "metabase-types/types/Visualization";
 
 const HEADER_ICON_SIZE = 16;
 
@@ -103,7 +101,7 @@ export default class Text extends Component {
     },
   };
 
-  componentWillReceiveProps(newProps: VisualizationProps) {
+  UNSAFE_componentWillReceiveProps(newProps: VisualizationProps) {
     // dashboard is going into edit mode
     if (!this.props.isEditing && newProps.isEditing) {
       this.onEdit();

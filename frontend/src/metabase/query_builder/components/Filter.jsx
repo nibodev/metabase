@@ -1,8 +1,5 @@
-/* @flow */
-
 import React from "react";
 
-import FieldName from "./FieldName";
 import Value from "metabase/components/Value";
 
 import Dimension from "metabase-lib/lib/Dimension";
@@ -13,16 +10,16 @@ import { getFilterArgumentFormatOptions } from "metabase/lib/schema_metadata";
 
 import { t, ngettext, msgid } from "ttag";
 
-import type { Filter as FilterObject } from "metabase/meta/types/Query";
-import type { Value as ValueType } from "metabase/meta/types/Dataset";
+import type { Filter as FilterObject } from "metabase-types/types/Query";
+import type { Value as ValueType } from "metabase-types/types/Dataset";
 import Metadata from "metabase-lib/lib/metadata/Metadata";
 import FilterWrapper from "metabase-lib/lib/queries/structured/Filter";
 
 export type FilterRenderer = ({
-  field?: ?React$Element<any>,
+  field?: React.Element,
   operator: ?string,
-  values: (React$Element<any> | string)[],
-}) => React$Element<any>;
+  values: (React.Element | string)[],
+}) => React.Element;
 
 type Props = {
   filter: FilterObject | FilterWrapper,
@@ -100,7 +97,7 @@ export const OperatorFilter = ({
       ));
   }
   return children({
-    field: <FieldName field={field} tableMetadata={dimension.field().table} />,
+    field: dimension.displayName(),
     operator: operator && operator.moreVerboseName,
     values: formattedValues,
   });

@@ -1,5 +1,3 @@
-/* @flow weak */
-
 import React, { Component } from "react";
 import { t } from "ttag";
 import DatePicker from "metabase/query_builder/components/filters/pickers/DatePicker";
@@ -24,14 +22,12 @@ import _ from "underscore";
 import type {
   Card as CardObject,
   StructuredDatasetQuery,
-} from "metabase/meta/types/Card";
-import type { TableMetadata } from "metabase/meta/types/Metadata";
-import type { FieldFilter } from "metabase/meta/types/Query";
+} from "metabase-types/types/Card";
+import type { FieldFilter } from "metabase-types/types/Query";
 
 type Props = {
   className?: string,
   card: CardObject,
-  tableMetadata: TableMetadata,
   setDatasetQuery: (
     datasetQuery: StructuredDatasetQuery,
     options: { run: boolean },
@@ -55,11 +51,11 @@ export default class TimeseriesFilterWidget extends Component {
 
   _popover: ?any;
 
-  componentWillMount() {
-    this.componentWillReceiveProps(this.props);
+  UNSAFE_componentWillMount() {
+    this.UNSAFE_componentWillReceiveProps(this.props);
   }
 
-  componentWillReceiveProps(nextProps: Props) {
+  UNSAFE_componentWillReceiveProps(nextProps: Props) {
     const query = Card.getQuery(nextProps.card);
     if (query) {
       const breakouts = Query.getBreakouts(query);
@@ -88,7 +84,7 @@ export default class TimeseriesFilterWidget extends Component {
   }
 
   render() {
-    const { className, card, tableMetadata, setDatasetQuery } = this.props;
+    const { className, card, setDatasetQuery } = this.props;
     const { filter, filterIndex, currentFilter } = this.state;
     let currentDescription;
 
@@ -126,7 +122,6 @@ export default class TimeseriesFilterWidget extends Component {
           onFilterChange={newFilter => {
             this.setState({ filter: newFilter });
           }}
-          tableMetadata={tableMetadata}
           includeAllTime
         />
         <div className="p1">

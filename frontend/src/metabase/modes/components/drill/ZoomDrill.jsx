@@ -1,11 +1,9 @@
-/* @flow */
-
 import { drillDownForDimensions } from "metabase/modes/lib/actions";
 
 import type {
   ClickAction,
   ClickActionProps,
-} from "metabase/meta/types/Visualization";
+} from "metabase-types/types/Visualization";
 import { t } from "ttag";
 
 export default ({
@@ -24,6 +22,8 @@ export default ({
       name: "timeseries-zoom",
       section: "zoom",
       title: t`Zoom in`,
+      buttonType: "horizontal",
+      icon: "zoom_in",
       question: () => question.pivot(drilldown.breakouts, dimensions),
     },
   ];

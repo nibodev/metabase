@@ -14,29 +14,19 @@
 
   If a report timezone is specified and the database supports it, the JVM timezone should have no impact on queries or
   their results."
-  (:require [clj-time
-             [core :as time]
-             [format :as tformat]]
-            [clojure
-             [string :as str]
-             [test :refer :all]]
+  (:require [clj-time.core :as time]
+            [clj-time.format :as tformat]
+            [clojure.test :refer :all]
             [java-time :as t]
-            [metabase
-             [driver :as driver]
-             [query-processor :as qp]
-             [query-processor-test :as qp.test]
-             [util :as u]]
+            [metabase.driver :as driver]
             [metabase.driver.sql.query-processor :as sql.qp]
+            [metabase.driver.sql.query-processor-test :as sql.qp.test]
             [metabase.models.database :refer [Database]]
+            [metabase.query-processor :as qp]
+            [metabase.query-processor-test :as qp.test]
             [metabase.query-processor.middleware.format-rows :as format-rows]
-            [metabase.query-processor.timezone :as qp.timezone]
-            [metabase.test
-             [data :as data]
-             [initialize :as initialize]]
-            [metabase.test.data
-             [datasets :as datasets]
-             [interface :as tx]]
-            [metabase.test.util.timezone :as tu.tz]
+            [metabase.test :as mt]
+            [metabase.util :as u]
             [metabase.util.date-2 :as u.date]
             [potemkin.types :as p.types]
             [pretty.core :as pretty]
@@ -62,16 +52,16 @@
 (deftest sanity-check-test
   ;; TIMEZONE FIXME — currently broken for Snowflake. UNIX timestamps are interpreted as being in the report timezone
   ;; rather than UTC.
-  (datasets/test-drivers (disj (qp.test/normal-drivers) :snowflake :redshift)
-    (testing "Regardless of report timezone, UNIX timestamps should always be interpreted a being in UTC."
+  (mt/test-drivers (disj (mt/normal-drivers) :snowflake :redshift)
+    (testing "\nRegardless of report timezone, UNIX timestamps should always be interpreted a being in UTC."
       (let [utc-results [[1 "2015-06-06T10:40:00Z" 4]
                          [2 "2015-06-10T19:51:00Z" 0]
                          [3 "2015-06-09T15:42:00Z" 5]
                          [4 "2015-06-22T23:49:00Z" 3]
                          [5 "2015-06-20T01:45:00Z" 3]]]
         (doseq [timezone [:pacific :utc :eastern]]
-          (testing "Results should be returned in report timezone, if supported by driver."
-            (testing (format "timezone = %s" timezone)
+          (testing "\nResults should be returned in report timezone, if supported by driver."
+            (testing (format "\ntimezone = %s" timezone)
               (let [local-results (cond
                                     (= driver/*driver* :sqlite)
                                     (for [[id s cnt] utc-results]
@@ -87,11 +77,11 @@
                                             t       (t/offset-date-time (t/with-zone-same-instant (u.date/parse s) zone-id))
                                             s       (t/format :iso-offset-date-time t)]
                                         [id s cnt])))]
-                (qp.timezone/with-report-timezone-id (->timezone-id timezone)
-                  (data/dataset sad-toucan-incidents
+                (mt/with-report-timezone-id (->timezone-id timezone)
+                  (mt/dataset sad-toucan-incidents
                     (is (= local-results
-                           (qp.test/formatted-rows [int identity int]
-                             (data/run-mbql-query incidents
+                           (mt/formatted-rows [int identity int]
+                             (mt/run-mbql-query incidents
                                {:fields   [$id $timestamp $severity]
                                 :order-by [[:asc $id]]
                                 :limit    5} ))))))))))))))
@@ -99,17 +89,17 @@
 (defn- sad-toucan-incidents-with-bucketing
   "Returns 10 sad toucan incidents grouped by `unit`"
   ([unit]
-   (->> (data/dataset sad-toucan-incidents
-          (data/run-mbql-query incidents
+   (->> (mt/dataset sad-toucan-incidents
+          (mt/run-mbql-query incidents
             {:aggregation [[:count]]
-             :breakout    [[:datetime-field $timestamp unit]]
+             :breakout    [[:field %timestamp {:temporal-unit unit}]]
              :limit       10}))
-        qp.test/rows
-        (qp.test/format-rows-by [->long-if-number int])))
+        mt/rows
+        (mt/format-rows-by [->long-if-number int])))
 
   ([unit timezone-id]
-   (initialize/initialize-if-needed! :db)
-   (qp.timezone/with-report-timezone-id (->timezone-id timezone-id)
+   (mt/initialize-if-needed! :db)
+   (mt/with-report-timezone-id (->timezone-id timezone-id)
      (sad-toucan-incidents-with-bucketing unit))))
 
 (defn- default-timezone-parse-fn
@@ -160,8 +150,8 @@
      [(-> s parse-fn format-result-fn) 1])))
 
 (deftest group-by-default-test
-  (datasets/test-drivers (qp.test/normal-drivers)
-    (testing "Pacific timezone"
+  (mt/test-drivers (mt/normal-drivers)
+    (testing "\nPacific timezone"
       (is (= (cond
                ;; Timezone is omitted by these databases HACK - SQLite returns datetimes as strings, and we don't
                ;; re-parse them or do anything smart with them; we just return them directly. This is less than ideal.
@@ -220,7 +210,7 @@
                 ["2015-06-02T08:20:00Z" 1]
                 ["2015-06-02T11:11:00Z" 1]])
              (sad-toucan-incidents-with-bucketing :default :pacific))))
-    (testing "Eastern timezone"
+    (testing "\nEastern timezone"
       (is (= (cond
                ;; These databases are always in UTC so aren't impacted by changes in report-timezone
                (= :sqlite driver/*driver*)
@@ -281,7 +271,7 @@
   ;; timezone
   ;;
   ;; TIMEZONE FIXME
-  (datasets/test-drivers (qp.test/normal-drivers-except #{:h2 :sqlserver :redshift :sparksql :mongo})
+  (mt/test-drivers (mt/normal-drivers-except #{:h2 :sqlserver :redshift :sparksql :mongo})
     (testing "Change JVM timezone from UTC to Pacific"
       (is (= (cond
                (= :sqlite driver/*driver*)
@@ -296,12 +286,12 @@
 
                :else
                (sad-toucan-result (default-timezone-parse-fn :utc) (format-in-timezone-fn :pacific)))
-             (tu.tz/with-system-timezone-id (timezone :pacific)
+             (mt/with-system-timezone-id (timezone :pacific)
                (sad-toucan-incidents-with-bucketing :default :eastern)))))))
 
 (deftest group-by-minute-test
   (testing "This dataset doesn't have multiple events in a minute, the results are the same as the default grouping"
-    (datasets/test-drivers (qp.test/normal-drivers)
+    (mt/test-drivers (mt/normal-drivers)
       (is (= (cond
                (= :sqlite driver/*driver*)
                (sad-toucan-result (default-timezone-parse-fn :utc) (comp u.date/format-sql t/local-date-time))
@@ -318,7 +308,7 @@
 
 (deftest group-by-minute-of-hour-test
   (testing "Grouping by minute of hour is not affected by timezones"
-    (datasets/test-drivers (qp.test/normal-drivers)
+    (mt/test-drivers (mt/normal-drivers)
       (is (= [[0 5]
               [1 4]
               [2 2]
@@ -357,7 +347,7 @@
 ;; For this test, the results are the same for each database, but the formatting of the time for that given count is
 ;; different depending on whether the database supports a report timezone and what timezone that database is in
 (deftest group-by-hour-test
-  (datasets/test-drivers (qp.test/normal-drivers)
+  (mt/test-drivers (mt/normal-drivers)
     (is (= (cond
              (= :sqlite driver/*driver*)
              (results-by-hour (default-timezone-parse-fn :utc) (comp u.date/format-sql t/local-date-time))
@@ -376,7 +366,7 @@
 ;; by matching the first three results of the pacific results to the last three of the UTC results (i.e. pacific is 7
 ;; hours back of UTC at that time)
 (deftest group-by-hour-of-day-test
-  (datasets/test-drivers (qp.test/normal-drivers)
+  (mt/test-drivers (mt/normal-drivers)
     (testing "results in pacific timezone"
       (is (= (if (and (not (qp.test/tz-shifted-driver-bug? driver/*driver*))
                       (qp.test/supports-report-timezone? driver/*driver*))
@@ -400,15 +390,12 @@
 (defn- find-events-in-range
   "Find the number of sad toucan events between `start-date-str` and `end-date-str`"
   [start-date-str end-date-str]
-  (-> (data/dataset sad-toucan-incidents
-        (data/run-mbql-query incidents
+  (-> (mt/dataset sad-toucan-incidents
+        (mt/run-mbql-query incidents
           {:aggregation [[:count]]
-           :breakout    [[:datetime-field $timestamp :day]]
-           :filter      [:between
-                         [:datetime-field $timestamp :default]
-                         start-date-str
-                         end-date-str]}))
-      qp.test/rows
+           :breakout    [!day.timestamp]
+           :filter      [:between !default.timestamp start-date-str end-date-str]}))
+      mt/rows
       first
       second
       (or 0)))
@@ -457,13 +444,13 @@
    counts))
 
 (deftest group-by-day-test
-  (datasets/test-drivers (qp.test/normal-drivers)
-    (testing "UTC timezone"
+  (mt/test-drivers (mt/normal-drivers)
+    (testing "\nUTC timezone"
       (is (= (if (= :sqlite driver/*driver*)
                (results-by-day u.date/parse date-without-time-format-fn  [6 10 4 9 9 8 8 9 7 9])
                (results-by-day u.date/parse (format-in-timezone-fn :utc) [6 10 4 9 9 8 8 9 7 9]))
              (sad-toucan-incidents-with-bucketing :day :utc))))
-    (testing "Pacific timezone"
+    (testing "\nPacific timezone"
       (is (= (cond
                (= :sqlite driver/*driver*)
                [["2015-06-01" 6]
@@ -513,7 +500,7 @@
                 ["2015-06-09T00:00:00Z" 7]
                 ["2015-06-10T00:00:00Z" 9]])
              (sad-toucan-incidents-with-bucketing :day :pacific))))
-    (testing "Eastern timezone"
+    (testing "\nEastern timezone"
       (is (= (cond
                (= :sqlite driver/*driver*)
                (results-by-day u.date/parse date-without-time-format-fn [6 10 4 9 9 8 8 9 7 9])
@@ -533,7 +520,7 @@
                                (format-in-timezone-fn :utc)
                                [6 10 4 9 9 8 8 9 7 9]))
              (sad-toucan-incidents-with-bucketing :day :eastern)))))
-  (testing "With JVM timezone set to Pacific time"
+  (testing "\nWith JVM timezone set to Pacific time"
     ;; This tests out the JVM timezone's impact on the results. For databases supporting a report timezone, this should
     ;; have no affect on the results. When no report timezone is used it should convert dates to the JVM's timezone
     ;;
@@ -545,7 +532,7 @@
     ;; timezone
     ;;
     ;; TIMEZONE FIXME
-    (datasets/test-drivers (qp.test/normal-drivers-except #{:h2 :sqlserver :redshift :sparksql :mongo :vertica})
+    (mt/test-drivers (mt/normal-drivers-except #{:h2 :sqlserver :redshift :sparksql :mongo :vertica})
       (is (= (cond
                (= :sqlite driver/*driver*)
                (results-by-day u.date/parse date-without-time-format-fn [6 10 4 9 9 8 8 9 7 9])
@@ -564,42 +551,42 @@
                (results-by-day (default-timezone-parse-fn :utc)
                                (format-in-timezone-fn :pacific)
                                [6 10 4 9 9 8 8 9 7 9]))
-             (tu.tz/with-system-timezone-id (timezone :pacific)
+             (mt/with-system-timezone-id (timezone :pacific)
                (sad-toucan-incidents-with-bucketing :day :pacific)))))))
 
 (deftest group-by-day-of-week-test
-  (datasets/test-drivers (qp.test/normal-drivers)
-    (testing "Pacific timezone"
+  (mt/test-drivers (mt/normal-drivers)
+    (testing "\nPacific timezone"
       (is (= (if (and (not (qp.test/tz-shifted-driver-bug? driver/*driver*))
                       (qp.test/supports-report-timezone? driver/*driver*))
                [[1 29] [2 36] [3 33] [4 29] [5 13] [6 38] [7 22]]
                [[1 28] [2 38] [3 29] [4 27] [5 24] [6 30] [7 24]])
              (sad-toucan-incidents-with-bucketing :day-of-week :pacific))))
-    (testing "UTC timezone"
+    (testing "\nUTC timezone"
       (is (= [[1 28] [2 38] [3 29] [4 27] [5 24] [6 30] [7 24]]
              (sad-toucan-incidents-with-bucketing :day-of-week :utc))))))
 
 (deftest group-by-day-of-month-test
-  (datasets/test-drivers (qp.test/normal-drivers)
-    (testing "Pacific timezone"
+  (mt/test-drivers (mt/normal-drivers)
+    (testing "\nPacific timezone"
       (is (= (if (and (not (qp.test/tz-shifted-driver-bug? driver/*driver*))
                       (qp.test/supports-report-timezone? driver/*driver*))
                [[1 8] [2 9] [3 9] [4 4] [5 11] [6 8] [7 6] [8 10] [9 6] [10 10]]
                [[1 6] [2 10] [3 4] [4 9] [5  9] [6 8] [7 8] [8  9] [9 7] [10  9]])
              (sad-toucan-incidents-with-bucketing :day-of-month :pacific))))
-    (testing "UTC timezone"
+    (testing "\nUTC timezone"
       (is (= [[1 6] [2 10] [3 4] [4 9] [5  9] [6 8] [7 8] [8  9] [9 7] [10  9]]
              (sad-toucan-incidents-with-bucketing :day-of-month :utc))))))
 
 (deftest group-by-day-of-year-test
-  (datasets/test-drivers (qp.test/normal-drivers)
-    (testing "Pacific timezone"
+  (mt/test-drivers (mt/normal-drivers)
+    (testing "\nPacific timezone"
       (is (= (if (and (not (qp.test/tz-shifted-driver-bug? driver/*driver*))
                       (qp.test/supports-report-timezone? driver/*driver*))
                [[152 8] [153 9]  [154 9] [155 4] [156 11] [157 8]  [158 6] [159 10] [160 6] [161 10]]
                [[152 6] [153 10] [154 4] [155 9] [156  9] [157  8] [158 8] [159  9] [160 7] [161  9]])
              (sad-toucan-incidents-with-bucketing :day-of-year :pacific))))
-    (testing "UTC timezone"
+    (testing "\nUTC timezone"
       (is (= [[152 6] [153 10] [154 4] [155 9] [156  9] [157  8] [158 8] [159  9] [160 7] [161  9]]
              (sad-toucan-incidents-with-bucketing :day-of-year :utc))))))
 
@@ -661,8 +648,8 @@
 ;; above. Databases that support report timezone will have different counts as the week starts and ends 7 hours
 ;; earlier
 (deftest group-by-week-test
-  (datasets/test-drivers (qp.test/normal-drivers)
-    (testing "UTC timezone"
+  (mt/test-drivers (mt/normal-drivers)
+    (testing "\nUTC timezone"
       (is (= (if (= :sqlite driver/*driver*)
                (results-by-week u.date/parse
                                 date-without-time-format-fn
@@ -671,7 +658,7 @@
                                 (format-in-timezone-fn :utc)
                                 [46 47 40 60 7]))
              (sad-toucan-incidents-with-bucketing :week :utc))))
-    (testing "Pacific timezone"
+    (testing "\nPacific timezone"
       (is (= (cond
                (= :sqlite driver/*driver*)
                (results-by-week u.date/parse
@@ -696,8 +683,8 @@
              (sad-toucan-incidents-with-bucketing :week :pacific))))
     ;; Tests eastern timezone grouping by week, UTC databases don't change, databases with reporting timezones need to
     ;; account for the 4-5 hour difference
-    (testing "Eastern timezone"
-      (datasets/test-drivers (qp.test/normal-drivers)
+    (testing "\nEastern timezone"
+      (mt/test-drivers (mt/normal-drivers)
         (is (= (cond
                  (= :sqlite driver/*driver*)
                  (results-by-week u.date/parse
@@ -726,7 +713,7 @@
   ;; The exclusions here are databases that give incorrect answers when the JVM timezone doesn't match the databases
   ;; timezone (TIMEZONE FIXME)
   (testing "JVM timezone set to Pacific"
-    (datasets/test-drivers (qp.test/normal-drivers-except #{:h2 :sqlserver :redshift :sparksql :mongo :bigquery})
+    (mt/test-drivers (mt/normal-drivers-except #{:h2 :sqlserver :redshift :sparksql :mongo :bigquery})
       (is (= (cond
                (= :sqlite driver/*driver*)
                (results-by-week u.date/parse
@@ -748,34 +735,19 @@
                (results-by-week u.date/parse
                                 (format-in-timezone-fn :pacific)
                                 [46 47 40 60 7]))
-             (tu.tz/with-system-timezone-id (timezone :pacific)
+             (mt/with-system-timezone-id (timezone :pacific)
                (sad-toucan-incidents-with-bucketing :week :pacific)))))))
 
-;; TODO — Group by `:iso-week` test!
-
 (deftest group-by-week-of-year-test
-  (datasets/test-drivers (qp.test/normal-drivers)
-    (is (= ;; Not really sure why different drivers have different opinions on these </3
-         (cond
-           (= :snowflake driver/*driver*)
-           [[22 46] [23 47] [24 40] [25 60] [26 7]]
-
-           (#{:sqlserver :sqlite :oracle :sparksql} driver/*driver*)
-           [[23 54] [24 46] [25 39] [26 61]]
-
-           (and (qp.test/supports-report-timezone? driver/*driver*)
-                (not (= :redshift driver/*driver*)))
-           [[23 49] [24 47] [25 39] [26 58] [27 7]]
-
-           :else
-           [[23 46] [24 47] [25 40] [26 60] [27 7]])
-         (sad-toucan-incidents-with-bucketing :week-of-year :pacific)))))
+  (mt/test-drivers (mt/normal-drivers)
+    (is (= [[22 46] [23 47] [24 40] [25 60] [26 7]]
+           (sad-toucan-incidents-with-bucketing :week-of-year :utc)))))
 
 ;; All of the sad toucan events in the test data fit in June. The results are the same on all databases and the only
 ;; difference is how the beginning of hte month is represented, since we always return times with our dates
 (deftest group-by-month-test
-  (datasets/test-drivers (qp.test/normal-drivers)
-    (testing "Pacific timezone"
+  (mt/test-drivers (mt/normal-drivers)
+    (testing "\nPacific timezone"
       (is (= [[(cond
                  (= :sqlite driver/*driver*)
                  "2015-06-01"
@@ -787,8 +759,8 @@
                  "2015-06-01T00:00:00Z")
                200]]
              (sad-toucan-incidents-with-bucketing :month :pacific))))
-    (testing "Eastern timezone"
-      (datasets/test-drivers (qp.test/normal-drivers)
+    (testing "\nEastern timezone"
+      (mt/test-drivers (mt/normal-drivers)
         (is (= [[(cond
                    (= :sqlite driver/*driver*)
                    "2015-06-01"
@@ -802,13 +774,13 @@
                (sad-toucan-incidents-with-bucketing :month :eastern)))))))
 
 (deftest group-by-month-of-year-test
-  (datasets/test-drivers (qp.test/normal-drivers)
+  (mt/test-drivers (mt/normal-drivers)
     (is (= [[6 200]]
            (sad-toucan-incidents-with-bucketing :month-of-year :pacific)))))
 
 (deftest group-by-quarter-test
-  (datasets/test-drivers (qp.test/normal-drivers)
-    (testing "Pacific timezone"
+  (mt/test-drivers (mt/normal-drivers)
+    (testing "\nPacific timezone"
       (is (= [[(cond (= :sqlite driver/*driver*)
                      "2015-04-01"
 
@@ -819,7 +791,7 @@
                      "2015-04-01T00:00:00Z")
                200]]
              (sad-toucan-incidents-with-bucketing :quarter :pacific))))
-    (testing "Eastern timezone"
+    (testing "\nEastern timezone"
       (is (= [[(cond (= :sqlite driver/*driver*)
                      "2015-04-01"
 
@@ -832,12 +804,21 @@
              (sad-toucan-incidents-with-bucketing :quarter :eastern))))))
 
 (deftest group-by-quarter-of-year-test
-  (datasets/test-drivers (qp.test/normal-drivers)
+  (mt/test-drivers (mt/normal-drivers)
     (is (= [[2 200]]
-           (sad-toucan-incidents-with-bucketing :quarter-of-year :pacific)))))
+           (sad-toucan-incidents-with-bucketing :quarter-of-year :pacific)))
+
+    (is (= [[1 200]
+            [2 284]
+            [3 278]
+            [4 238]]
+           (mt/formatted-rows [int int]
+             (mt/run-mbql-query checkins
+               {:aggregation [[:count]]
+                :breakout    [!quarter-of-year.date]}))))))
 
 (deftest group-by-year-test
-  (datasets/test-drivers (qp.test/normal-drivers)
+  (mt/test-drivers (mt/normal-drivers)
     (is (= [[(cond
                (= :sqlite driver/*driver*)
                "2015-01-01"
@@ -847,7 +828,19 @@
                :else
                "2015-01-01T00:00:00Z")
              200]]
-           (sad-toucan-incidents-with-bucketing :year :pacific)))))
+           (sad-toucan-incidents-with-bucketing :year :pacific)))
+
+    (is (= (if (= :sqlite driver/*driver*)
+             [["2013-01-01" 235]
+              ["2014-01-01" 498]
+              ["2015-01-01" 267]]
+             [["2013-01-01T00:00:00Z" 235]
+              ["2014-01-01T00:00:00Z" 498]
+              ["2015-01-01T00:00:00Z" 267]])
+           (mt/formatted-rows [str int]
+             (mt/run-mbql-query checkins
+               {:aggregation [[:count]]
+                :breakout    [!year.date]}))))))
 
 ;; RELATIVE DATES
 (p.types/deftype+ ^:private TimestampDatasetDef [intervalSeconds]
@@ -855,10 +848,10 @@
   (pretty [_]
     (list 'TimestampDatasetDef. intervalSeconds)))
 
-(defmethod tx/get-dataset-definition TimestampDatasetDef
+(defmethod mt/get-dataset-definition TimestampDatasetDef
   [^TimestampDatasetDef this]
   (let [interval-seconds (.intervalSeconds this)]
-    (tx/dataset-definition (str "checkins_interval_" interval-seconds)
+    (mt/dataset-definition (str "checkins_interval_" interval-seconds)
       ["checkins"
        [{:field-name "timestamp"
          :base-type  :type/DateTime}]
@@ -868,60 +861,80 @@
               ;; Create timestamps using relative dates (e.g. `DATEADD(second, -195, GETUTCDATE())` instead of
               ;; generating Java classes here so they'll be in the DB's native timezone. Some DBs refuse to use
               ;; the same timezone we're running the tests from *cough* SQL Server *cough*
-              [(u/prog1 (if (isa? driver/hierarchy driver/*driver* :sql)
-                          (driver/date-add driver/*driver*
-                                           (sql.qp/current-datetime-fn driver/*driver*)
-                                           (* i interval-seconds)
-                                           :second)
+              [(u/prog1 (if (and (isa? driver/hierarchy driver/*driver* :sql)
+                                 ;; BigQuery/Vertica don't insert rows using SQL statements
+                                 ;;
+                                 ;; TODO -- make 'insert-rows-using-statements?` a multimethod so we don't need to
+                                 ;; hardcode the whitelist here.
+                                 (not (#{:vertica :bigquery} driver/*driver*)))
+                          (sql.qp/add-interval-honeysql-form driver/*driver*
+                                                             (sql.qp/current-datetime-honeysql-form driver/*driver*)
+                                                             (* i interval-seconds)
+                                                             :second)
                           (u.date/add :second (* i interval-seconds)))
                  (assert <>))]))])))
 
 (defn- dataset-def-with-timestamps [interval-seconds]
   (TimestampDatasetDef. interval-seconds))
 
-(def ^:private checkins:4-per-minute (dataset-def-with-timestamps 15))
-(def ^:private checkins:4-per-hour   (dataset-def-with-timestamps (u/minutes->seconds 15)))
-(def ^:private checkins:1-per-day    (dataset-def-with-timestamps (* 24 (u/minutes->seconds 60))))
+(def ^:private checkins:4-per-minute
+  "Dynamically generated dataset with 30 checkins spaced 15 seconds apart, from 3 mins 45 seconds ago to 3 minutes 30
+  seconds in the future."
+  (dataset-def-with-timestamps 15))
 
-(defn- checkins-db-is-old? [max-age-seconds]
-  (u.date/greater-than-period-duration? (u.date/period-duration (:created_at (data/db)) (t/zoned-date-time))
+(def ^:private checkins:4-per-hour
+  "Dynamically generated dataset with 30 checkins spaced 15 minutes apart, from 3 hours 45 minutes ago to 3 hours 30
+  minutes in the future."
+  (dataset-def-with-timestamps (u/minutes->seconds 15)))
+
+(def ^:private checkins:1-per-day
+  "Dynamically generated dataset with 30 checkins spaced 24 hours apart, from 15 days ago to 14 days in the future."
+  (dataset-def-with-timestamps (* 24 (u/minutes->seconds 60))))
+
+(defn- checkins-db-is-old?
+  "Determine whether we need to recreate one of the dynamically-generated datasets above, if the data has grown a little
+  stale."
+  [max-age-seconds]
+  (u.date/greater-than-period-duration? (u.date/period-duration (:created_at (mt/db)) (t/zoned-date-time))
                                         (t/seconds max-age-seconds)))
 
 (def ^:private ^:dynamic *recreate-db-if-stale?* true)
 
-(defn- count-of-grouping [^TimestampDatasetDef dataset, field-grouping & relative-datetime-args]
-  (-> (data/dataset dataset
+(defn- count-of-grouping [^TimestampDatasetDef dataset field-grouping & relative-datetime-args]
+  (-> (mt/dataset dataset
         ;; DB has values in the range of now() - (interval-seconds * 15) and now() + (interval-seconds * 15). So if it
         ;; was created more than (interval-seconds * 5) seconds ago, delete the Database and recreate it to make sure
         ;; the tests pass.
         ;;
-        ;; TODO - perhaps this should be rolled into `data/dataset` itself -- it seems like a useful feature?
+        ;; TODO - perhaps this should be rolled into `mt/dataset` itself -- it seems like a useful feature?
         (if (and (checkins-db-is-old? (* (.intervalSeconds dataset) 5)) *recreate-db-if-stale?*)
           (binding [*recreate-db-if-stale?* false]
             (printf "DB for %s is stale! Deleteing and running test again\n" dataset)
-            (db/delete! Database :id (data/id))
+            (db/delete! Database :id (mt/id))
             (apply count-of-grouping dataset field-grouping relative-datetime-args))
-          (-> (data/run-mbql-query checkins
-                {:aggregation [[:count]]
-                 :filter      [:=
-                               [:datetime-field $timestamp field-grouping]
-                               (cons :relative-datetime relative-datetime-args)]})
-              qp.test/first-row first int)))))
+          (let [results (mt/run-mbql-query checkins
+                          {:aggregation [[:count]]
+                           :filter      [:=
+                                         [:field %timestamp {:temporal-unit field-grouping}]
+                                         (cons :relative-datetime relative-datetime-args)]})]
+            (or (some-> results mt/first-row first int)
+                results))))))
 
-;; HACK - Don't run these tests against BigQuery/etc. because the databases need to be loaded every time the tests are ran
-;;        and loading data into BigQuery/etc. is mind-bogglingly slow. Don't worry, I promise these work though!
+;; HACK - Don't run these tests against Snowflake/etc. because the databases need to be loaded every time the tests
+;;        are ran and loading data into these DBs is mind-bogglingly slow.
+;;
+;; Don't run the minute tests against Oracle because the Oracle tests are kind of slow and case CI to fail randomly
+;; when it takes so long to load the data that the times are no longer current (these tests pass locally if your
+;; machine isn't as slow as the CircleCI ones)
 (deftest count-of-grouping-test
-  ;; Don't run the minute tests against Oracle because the Oracle tests are kind of slow and case CI to fail randomly
-  ;; when it takes so long to load the data that the times are no longer current (these tests pass locally if your
-  ;; machine isn't as slow as the CircleCI ones)
-  (datasets/test-drivers (qp.test/normal-drivers-except #{:snowflake :bigquery :oracle})
+  (mt/test-drivers (mt/normal-drivers-except #{:snowflake})
     (testing "4 checkins per minute dataset"
       (testing "group by minute"
         (doseq [args [[:current] [-1 :minute] [1 :minute]]]
           (is (= 4
                  (apply count-of-grouping checkins:4-per-minute :minute args))
               (format "filter by minute = %s" (into [:relative-datetime] args)))))))
-  (datasets/test-drivers (qp.test/normal-drivers-except #{:snowflake :bigquery})
+  (mt/test-drivers (mt/normal-drivers-except #{:snowflake})
     (testing "4 checkins per hour dataset"
       (testing "group by hour"
         (doseq [args [[:current] [-1 :hour] [1 :hour]]]
@@ -940,38 +953,37 @@
             "filter by week = [:relative-datetime :current]")))))
 
 (deftest time-interval-test
-  (datasets/test-drivers (qp.test/normal-drivers-except #{:snowflake :bigquery})
+  (mt/test-drivers (mt/normal-drivers-except #{:snowflake})
     (testing "Syntactic sugar (`:time-interval` clause)"
-      (is (= 1
-             (-> (data/dataset checkins:1-per-day
-                   (data/run-mbql-query checkins
+      (mt/dataset checkins:1-per-day
+        (is (= 1
+               (-> (mt/run-mbql-query checkins
                      {:aggregation [[:count]]
-                      :filter      [:time-interval $timestamp :current :day]}))
-                 qp.test/first-row first int)))
+                      :filter      [:time-interval $timestamp :current :day]})
+                   mt/first-row first int)))
 
-      (is (= 7
-             (-> (data/dataset checkins:1-per-day
-                   (data/run-mbql-query checkins
+        (is (= 7
+               (-> (mt/run-mbql-query checkins
                      {:aggregation [[:count]]
-                      :filter      [:time-interval $timestamp :last :week]}))
-                 qp.test/first-row first int))))))
+                      :filter      [:time-interval $timestamp :last :week]})
+                   mt/first-row first int)))))))
 
 ;; Make sure that when referencing the same field multiple times with different units we return the one that actually
 ;; reflects the units the results are in. eg when we breakout by one unit and filter by another, make sure the results
 ;; and the col info use the unit used by breakout
 (defn- date-bucketing-unit-when-you [& {:keys [breakout-by filter-by with-interval]
                                         :or   {with-interval :current}}]
-  (let [results (data/dataset checkins:1-per-day
-                  (data/run-mbql-query checkins
+  (let [results (mt/dataset checkins:1-per-day
+                  (mt/run-mbql-query checkins
                     {:aggregation [[:count]]
-                     :breakout    [[:datetime-field $timestamp breakout-by]]
+                     :breakout    [[:field %timestamp {:temporal-unit breakout-by}]]
                      :filter      [:time-interval $timestamp with-interval filter-by]}))]
     {:rows (or (-> results :row_count)
                (throw (ex-info "Query failed!" results)))
      :unit (-> results :data :cols first :unit)}))
 
 (deftest date-bucketing-when-you-test
-  (datasets/test-drivers (qp.test/normal-drivers-except #{:snowflake :bigquery})
+  (mt/test-drivers (mt/normal-drivers-except #{:snowflake})
     (is (= {:rows 1, :unit :day}
            (date-bucketing-unit-when-you :breakout-by "day", :filter-by "day")))
     (is (= {:rows 7, :unit :day}
@@ -993,51 +1005,51 @@
 ;;
 ;; This should only apply when comparing Fields to `yyyy-MM-dd` date strings.
 ;;
-;; e.g. `[:= <field> "2018-11-19"] should get rewritten as `[:= [:datetime-field <field> :day] "2018-11-19"]` if
+;; e.g. `[:= <field> "2018-11-19"] should get rewritten as `[:= [:field <field> {:temporal-unit :day}] "2018-11-19"]` if
 ;; `<field>` is a `:type/DateTime` Field
 ;;
 ;; We should get count = 1 for the current day, as opposed to count = 0 if we weren't auto-bucketing
 ;; (e.g. 2018-11-19T00:00 != 2018-11-19T12:37 or whatever time the checkin is at)
 (deftest default-bucketing-test
-  (datasets/test-drivers (qp.test/normal-drivers-except #{:snowflake :bigquery})
-    (is (= [[1]]
-           (qp.test/format-rows-by [int]
-             (qp.test/rows
-               (data/dataset checkins:1-per-day
-                 (data/run-mbql-query checkins
-                   {:aggregation [[:count]]
-                    :filter      [:= [:field-id $timestamp] (t/format "yyyy-MM-dd" (u.date/truncate :day))]})))))))
-  ;; this is basically the same test as above, but using the office-checkins dataset instead of the dynamically
-  ;; created checkins DBs so we can run it against Snowflake and BigQuery as well.
-  (datasets/test-drivers (qp.test/normal-drivers)
-    (data/dataset office-checkins
+  (mt/test-drivers (mt/normal-drivers-except #{:snowflake})
+    (mt/dataset checkins:1-per-day
       (is (= [[1]]
-             (qp.test/format-rows-by [int]
-               (qp.test/rows
-                 (data/run-mbql-query checkins
-                   {:aggregation [[:count]]
-                    :filter      [:= [:field-id $timestamp] "2019-01-16"]})))))
+             (mt/formatted-rows [int]
+               (mt/run-mbql-query checkins
+                 {:aggregation [[:count]]
+                  :filter      [:= [:field $timestamp nil] (t/format "yyyy-MM-dd" (u.date/truncate :day))]}))))))
+
+  ;; this is basically the same test as above, but using the office-checkins dataset instead of the dynamically
+  ;; created checkins DBs so we can run it against Snowflake as well.
+  (mt/test-drivers (mt/normal-drivers)
+    (mt/dataset office-checkins
+      (is (= [[1]]
+             (mt/formatted-rows [int]
+               (mt/run-mbql-query checkins
+                 {:aggregation [[:count]]
+                  :filter      [:= [:field $timestamp nil] "2019-01-16"]}))))
+
       (testing "Check that automatic bucketing still happens when using compound filter clauses (#9127)"
         (is (= [[1]]
-               (qp.test/format-rows-by [int]
-                 (qp.test/rows
-                   (data/run-mbql-query checkins
-                     {:aggregation [[:count]]
-                      :filter      [:and
-                                    [:= [:field-id $timestamp] "2019-01-16"]
-                                    [:= [:field-id $id] 6]]})))))))
+               (mt/formatted-rows [int]
+                 (mt/run-mbql-query checkins
+                   {:aggregation [[:count]]
+                    :filter      [:and
+                                  [:= [:field $timestamp nil] "2019-01-16"]
+                                  [:= [:field $id nil] 6]]})))))))
+
+  (mt/test-drivers (mt/normal-drivers-except #{:snowflake})
     (testing "if datetime string is not yyyy-MM-dd no date bucketing should take place, and thus we should get no (exact) matches"
-      (data/dataset checkins:1-per-day
-        (is (= ;; Mongo returns empty row for count = 0. We should fix that
+      (mt/dataset checkins:1-per-day
+        (is (= ;; Mongo returns empty row for count = 0. We should fix that (#5419)
              (case driver/*driver*
                :mongo []
                [[0]])
-             (qp.test/format-rows-by [int]
-               (qp.test/rows
-                 (data/run-mbql-query checkins
-                   {:aggregation [[:count]]
-                    :filter      [:= [:field-id $timestamp] (str (t/format "yyyy-MM-dd" (u.date/truncate :day))
-                                                                 "T14:16:00Z")]})))))))))
+             (mt/formatted-rows [int]
+               (mt/run-mbql-query checkins
+                 {:aggregation [[:count]]
+                  :filter      [:= [:field $timestamp nil] (str (t/format "yyyy-MM-dd" (u.date/truncate :day))
+                                                                "T14:16:00Z")]}))))))))
 
 (def ^:private addition-unit-filtering-vals
   [[3        :day             "2014-03-03"]
@@ -1045,7 +1057,7 @@
    [36       :day-of-month    1]
    [9        :day-of-year     214]
    [11       :week            "2014-03-03"]
-   [#{7 8 9} :week-of-year    2]
+   [7        :week-of-year    2]
    [48       :month           "2014-03"]
    [38       :month-of-year   1]
    [107      :quarter         "2014-01"]
@@ -1054,33 +1066,97 @@
 
 (defn- count-of-checkins [unit filter-value]
   (ffirst
-   (qp.test/format-rows-by [int]
-     (qp.test/rows
-       (data/run-mbql-query checkins
-         {:aggregation [[:count]]
-          :filter      [:= [:datetime-field $date unit] filter-value]})))))
+   (mt/formatted-rows [int]
+     (mt/run-mbql-query checkins
+       {:aggregation [[:count]]
+        :filter      [:= [:field %date {:temporal-unit unit}] filter-value]}))))
 
 (deftest additional-unit-filtering-tests
   (testing "Additional tests for filtering against various datetime bucketing units that aren't tested above"
-    (datasets/test-drivers (qp.test/normal-drivers)
+    (mt/test-drivers (mt/normal-drivers)
       (doseq [[expected-count unit filter-value] addition-unit-filtering-vals]
-        (testing unit
-          (let [result (count-of-checkins unit filter-value)]
-            (if (integer? expected-count)
-              (is (= expected-count result)
-                  (format "count of rows where (= (%s date) %s) should be %d" (name unit) filter-value expected-count))
-              (is (contains? expected-count result)
-                  (format "count of rows where (= (%s date) %s) should be one of: %s"
-                          (name unit) filter-value (str/join ", " (sort expected-count)))))))))))
+        (testing (format "\nunit = %s" unit)
+          (is (= expected-count (count-of-checkins unit filter-value))
+              (format "count of rows where (= (%s date) %s) should be %d" (name unit) filter-value expected-count)))))))
 
 (deftest legacy-default-datetime-bucketing-test
-  (is (= (str "SELECT count(*) AS \"count\" "
-              "FROM \"PUBLIC\".\"CHECKINS\" "
-              "WHERE CAST(\"PUBLIC\".\"CHECKINS\".\"DATE\" AS date) = CAST(now() AS date)")
-         (:query
-          (qp/query->native
-            (data/mbql-query checkins
-              {:aggregation [[:count]]
-               :filter      [:= $date [:relative-datetime :current]]}))))
-      (str "Datetime fields that aren't wrapped in datetime-field clauses should get default :day bucketing for legacy "
-           "reasons. See #9014")))
+  (testing (str ":type/Date or :type/DateTime fields that don't have `:temporal-unit` clauses should get default `:day` "
+                "bucketing for legacy reasons. See #9014")
+    (is (= (str "SELECT count(*) AS \"count\" "
+                "FROM \"PUBLIC\".\"CHECKINS\" "
+                "WHERE ("
+                "\"PUBLIC\".\"CHECKINS\".\"DATE\" >= CAST(now() AS date) "
+                "AND "
+                "\"PUBLIC\".\"CHECKINS\".\"DATE\" < CAST(dateadd('day', CAST(1 AS long), now()) AS date)"
+                ")")
+           (:query
+            (qp/query->native
+             (mt/mbql-query checkins
+               {:aggregation [[:count]]
+                :filter      [:= $date [:relative-datetime :current]]})))))))
+
+(deftest compile-time-interval-test
+  (testing "Make sure time-intervals work the way they're supposed to."
+    (testing "[:time-interval $date -4 :month] should give us something like Oct 01 2020 - Feb 01 2021 if today is Feb 17 2021"
+      (is (= (str "SELECT CHECKINS.DATE AS DATE "
+                  "FROM CHECKINS "
+                  "WHERE ("
+                  "CHECKINS.DATE >= parsedatetime(formatdatetime(dateadd('month', CAST(-4 AS long), now()), 'yyyyMM'), 'yyyyMM')"
+                  " AND "
+                  "CHECKINS.DATE < parsedatetime(formatdatetime(now(), 'yyyyMM'), 'yyyyMM')) "
+                  "GROUP BY CHECKINS.DATE "
+                  "ORDER BY CHECKINS.DATE ASC "
+                  "LIMIT 1048576")
+             (sql.qp.test/pretty-sql
+              (:query
+               (qp/query->native
+                (mt/mbql-query checkins
+                  {:filter   [:time-interval $date -4 :month]
+                   :breakout [[:datetime-field $date :day]]})))))))))
+
+(deftest field-filter-start-of-week-test
+  (testing "Field Filters with relative date ranges should respect the custom start of week setting (#14294)"
+    (mt/dataset checkins:1-per-day
+      (let [query (mt/native-query {:query         (str "SELECT dayname(\"TIMESTAMP\") as day "
+                                                        "FROM checkins "
+                                                        "[[WHERE {{date_range}}]] "
+                                                        "ORDER BY \"TIMESTAMP\" ASC "
+                                                        "LIMIT 1")
+                                    :template-tags {"date_range"
+                                                    {:name         "date_range"
+                                                     :display-name "Date Range"
+                                                     :type         :dimension
+                                                     :dimension    (mt/$ids $checkins.timestamp)}}
+                                    :parameters    [{:type   :date/range
+                                                     :name   "created_at"
+                                                     :target [:dimension [:template-tag "date_range"]]
+                                                     :value  "past1weeks"}]})]
+        (doseq [[first-day-of-week expected] {"sunday"    ["Sunday"]
+                                              "monday"    ["Monday"]
+                                              "tuesday"   ["Tuesday"]
+                                              "wednesday" ["Wednesday"]
+                                              "thursday"  ["Thursday"]
+                                              "friday"    ["Friday"]
+                                              "saturday"  ["Saturday"]}]
+          (mt/with-temporary-setting-values [start-of-week first-day-of-week]
+            (is (= expected
+                   (mt/first-row
+                     (qp/process-query query))))))))))
+
+(deftest day-of-week-custom-start-of-week-test
+  (mt/test-drivers (mt/normal-drivers)
+    (testing "`:day-of-week` bucketing should respect the `start-of-week` Setting (#13604)"
+      (testing "filter by `:day-of-week` should work correctly (#15044)"
+        (doseq [[day [thursday-day-of-week saturday-day-of-week]] {:sunday  [5 7]
+                                                                   :monday  [4 6]
+                                                                   :tuesday [3 5]}]
+          (mt/with-temporary-setting-values [start-of-week day]
+            (is (= (sort-by
+                    first
+                    [[thursday-day-of-week 2]
+                     [saturday-day-of-week 1]])
+                   (mt/formatted-rows [int int]
+                     (mt/run-mbql-query checkins
+                       {:aggregation [[:count]]
+                        :breakout    [!day-of-week.date]
+                        :filter      [:between $date "2013-01-03" "2013-01-20"]}))))))))))

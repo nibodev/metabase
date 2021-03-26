@@ -1,5 +1,3 @@
-/* @flow  */
-
 import React, { Component } from "react";
 import { t } from "ttag";
 import { Flex } from "grid-styled";
@@ -14,8 +12,8 @@ import * as Urls from "metabase/lib/urls";
 import type {
   Dashboard as DashboardType,
   DashboardId,
-} from "metabase/meta/types/Dashboard";
-import type { Card } from "metabase/meta/types/Card";
+} from "metabase-types/types/Dashboard";
+import type { Card } from "metabase-types/types/Card";
 
 import Dashboard from "metabase/entities/dashboards";
 

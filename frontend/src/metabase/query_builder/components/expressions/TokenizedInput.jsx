@@ -1,5 +1,6 @@
 import React, { Component } from "react";
 import ReactDOM from "react-dom";
+import ReactDOMServer from "react-dom/server";
 
 import TokenizedExpression from "./TokenizedExpression";
 
@@ -24,6 +25,7 @@ export default class TokenizedInput extends Component {
 
   static defaultProps = {
     style: {},
+    tokenizedEditing: false,
   };
 
   _getValue() {
@@ -67,7 +69,11 @@ export default class TokenizedInput extends Component {
   onInput = e => {
     this._setValue(e.target.textContent);
   };
-  onKeyDown = e => {
+
+  onKeyDownNormal = e => {
+    this.props.onKeyDown(e);
+  };
+  onKeyDownTokenized = e => {
     // isTyping signals whether the user is typing characters (keyCode >= 65) vs. deleting / navigating with arrows / clicking to select
     const isTyping = this._isTyping;
     // also keep isTyping same when deleting
@@ -140,16 +146,12 @@ export default class TokenizedInput extends Component {
     const inputNode = ReactDOM.findDOMNode(this);
     const restore = saveSelection(inputNode);
 
-    ReactDOM.unmountComponentAtNode(inputNode);
-    while (inputNode.firstChild) {
-      inputNode.removeChild(inputNode.firstChild);
-    }
-    ReactDOM.render(
+    inputNode.innerHTML = ReactDOMServer.renderToStaticMarkup(
       <TokenizedExpression
         source={this._getValue()}
-        parserInfo={this.props.parserInfo}
+        syntaxTree={this.props.syntaxTree}
+        parserOptions={this.props.parserOptions}
       />,
-      inputNode,
     );
 
     if (document.activeElement === inputNode) {
@@ -162,9 +164,14 @@ export default class TokenizedInput extends Component {
     return (
       <div
         className={className}
-        style={{ whiteSpace: "pre-wrap", ...style }}
+        style={{ ...style }}
         contentEditable
-        onKeyDown={this.onKeyDown}
+        spellCheck={false}
+        onKeyDown={
+          this.props.tokenizedEditing
+            ? this.onKeyDownTokenized
+            : this.onKeyDownNormal
+        }
         onInput={this.onInput}
         onFocus={onFocus}
         onBlur={onBlur}

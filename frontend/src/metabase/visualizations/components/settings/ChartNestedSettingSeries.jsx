@@ -1,5 +1,3 @@
-/* @flow */
-
 import React from "react";
 
 import ColorPicker from "metabase/components/ColorPicker";
@@ -40,7 +38,7 @@ export default class ChartNestedSettingSeries extends React.Component {
             return (
               <div
                 key={key}
-                className="px4 pb2 mb2 border-bottom align-self-stretch"
+                className="px4 pt2 mt2 border-top align-self-stretch"
               >
                 <div className="flex align-center">
                   <ColorPicker

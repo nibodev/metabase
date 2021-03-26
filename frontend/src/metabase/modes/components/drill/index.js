@@ -1,5 +1,3 @@
-/* @flow */
-
 import SortAction from "./SortAction";
 import ObjectDetailDrill from "./ObjectDetailDrill";
 import QuickFilterDrill from "./QuickFilterDrill";
@@ -9,8 +7,9 @@ import AutomaticDashboardDrill from "./AutomaticDashboardDrill";
 import CompareToRestDrill from "./CompareToRestDrill";
 import ZoomDrill from "./ZoomDrill";
 import FormatAction from "./FormatAction";
+import DashboardClickDrill from "./DashboardClickDrill";
 
-export const DEFAULT_DRILLS = [
+export const getDefaultDrills = () => [
   ZoomDrill,
   SortAction,
   ObjectDetailDrill,
@@ -20,4 +19,5 @@ export const DEFAULT_DRILLS = [
   AutomaticDashboardDrill,
   CompareToRestDrill,
   FormatAction,
+  DashboardClickDrill,
 ];

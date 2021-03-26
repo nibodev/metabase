@@ -12,14 +12,12 @@
    Of course, it would be entirely possible to call `(Field 10)` every time you needed information about that Field,
   but fetching all Fields in a single pass and storing them for reuse is dramatically more efficient than fetching
   those Fields potentially dozens of times in a single query execution."
-  (:require [metabase.models
-             [database :refer [Database]]
-             [field :refer [Field]]
-             [table :refer [Table]]]
+  (:require [metabase.models.database :refer [Database]]
+            [metabase.models.field :refer [Field]]
+            [metabase.models.table :refer [Table]]
             [metabase.util :as u]
-            [metabase.util
-             [i18n :refer [tru]]
-             [schema :as su]]
+            [metabase.util.i18n :refer [tru]]
+            [metabase.util.schema :as su]
             [schema.core :as s]
             [toucan.db :as db]))
 
@@ -88,39 +86,47 @@
   query results. Try to keep this set pared down to just what's needed by the QP and frontend, since it has to be done
   for every MBQL query."
   [:base_type
+   :coercion_strategy
    :database_type
    :description
    :display_name
+   :effective_type
    :fingerprint
    :id
    :name
    :parent_id
+   :semantic_type
    :settings
-   :special_type
    :table_id
    :visibility_type])
 
 (def ^:private FieldInstanceWithRequiredStorekeys
   (s/both
    (class Field)
-   {:name          su/NonBlankString
-    :display_name  su/NonBlankString
-    :description   (s/maybe s/Str)
-    :database_type su/NonBlankString
-    :base_type     su/FieldType
-    :special_type  (s/maybe su/FieldType)
-    :fingerprint   (s/maybe su/Map)
-    :parent_id     (s/maybe su/IntGreaterThanZero)
-    s/Any          s/Any}))
+   {:name                               su/NonBlankString
+    :display_name                       su/NonBlankString
+    :description                        (s/maybe s/Str)
+    :database_type                      su/NonBlankString
+    :base_type                          su/FieldType
+    ;; there's a tension as we sometimes store fields from the db, and sometimes store computed fields. ideally we
+    ;; would make everything just use base_type.
+    (s/optional-key :effective_type)    (s/maybe su/FieldType)
+    (s/optional-key :coercion_strategy) (s/maybe su/CoercionStrategy)
+    :semantic_type                      (s/maybe su/FieldType)
+    :fingerprint                        (s/maybe su/Map)
+    :parent_id                          (s/maybe su/IntGreaterThanZero)
+    s/Any                               s/Any}))
 
 
 ;;; ------------------------------------------ Saving objects in the Store -------------------------------------------
 
-(s/defn ^:private store-database!
+(s/defn store-database!
   "Store the Database referenced by this query for the duration of the current query execution. Throws an Exception if
   database is invalid or doesn't have all the required keys."
   [database :- DatabaseInstanceWithRequiredStoreKeys]
   (swap! *store* assoc :database database))
+
+;; TODO ­ I think these can be made private
 
 (s/defn store-table!
   "Store a `table` in the QP Store for the duration of the current query execution. Throws an Exception if table is

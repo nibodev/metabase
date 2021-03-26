@@ -1,5 +1,3 @@
-/* @flow */
-
 import React, { Component } from "react";
 import { connect } from "react-redux";
 
@@ -8,7 +6,7 @@ import { filterWidgetFilterRenderer } from "./filters/FilterWidget";
 
 import { getMetadata } from "metabase/selectors/metadata";
 
-import type { Filter as FilterType } from "metabase/meta/types/Query";
+import type { Filter as FilterType } from "metabase-types/types/Query";
 import type { FilterRenderer } from "./Filter";
 
 type Props = {

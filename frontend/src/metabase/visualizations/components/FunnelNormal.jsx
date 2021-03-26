@@ -1,5 +1,3 @@
-/* @flow */
-
 import React, { Component } from "react";
 
 import cx from "classnames";
@@ -17,7 +15,7 @@ import type {
   VisualizationProps,
   HoverObject,
   ClickObject,
-} from "metabase/meta/types/Visualization";
+} from "metabase-types/types/Visualization";
 
 type StepInfo = {
   value: number,

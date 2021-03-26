@@ -123,6 +123,40 @@ describe("visualization_settings", () => {
         expect(settings["graph.y_axis.title_text"]).toBe(null);
       });
     });
+    describe("graph.show_values", () => {
+      it("should not show values on a bar chart by default", () => {
+        const card = { visualization_settings: {}, display: "bar" };
+        const data = { rows: new Array(10).fill([1]) };
+        const settings = getComputedSettingsForSeries([{ card, data }]);
+        expect(settings["graph.show_values"]).toBe(false);
+      });
+      it("should not show values on a previously saved bar chart", () => {
+        const card = {
+          visualization_settings: {},
+          display: "bar",
+          original_card_id: 1,
+        };
+        const data = { rows: new Array(10).fill([1]) };
+        const settings = getComputedSettingsForSeries([{ card, data }]);
+        expect(settings["graph.show_values"]).toBe(false);
+      });
+    });
+    describe("table.columns", () => {
+      it("should include fieldRef in default table.columns", () => {
+        const card = { visualization_settings: {} };
+        const cols = [
+          NumberColumn({
+            name: "some number",
+            field_ref: ["field", 123, null],
+          }),
+        ];
+        const {
+          "table.columns": [setting],
+        } = getComputedSettingsForSeries([{ card, data: { cols } }]);
+
+        expect(setting.fieldRef).toEqual(["field", 123, null]);
+      });
+    });
   });
 
   describe("getStoredSettingsForSeries", () => {
@@ -135,18 +169,6 @@ describe("visualization_settings", () => {
         { card: { visualization_settings: { foo: "bar" } } },
       ]);
       expect(settings).toEqual({ foo: "bar" });
-    });
-    it("should normalize stored columnSettings keys", () => {
-      const oldKey = `["ref",["fk->",1,2]]`;
-      const newKey = `["ref",["fk->",["field-id",1],["field-id",2]]]`;
-      const settings = getStoredSettingsForSeries([
-        {
-          card: {
-            visualization_settings: { column_settings: { [oldKey]: "blah" } },
-          },
-        },
-      ]);
-      expect(settings.column_settings).toEqual({ [newKey]: "blah" });
     });
   });
   describe("table.cell_column", () => {

@@ -1,5 +1,3 @@
-/* @flow weak */
-
 import React, { Component } from "react";
 
 import TimeGroupingPopover from "metabase/query_builder/components/TimeGroupingPopover";
@@ -14,7 +12,7 @@ import { parseFieldBucketing, formatBucketing } from "metabase/lib/query_time";
 import type {
   Card as CardObject,
   StructuredDatasetQuery,
-} from "metabase/meta/types/Card";
+} from "metabase-types/types/Card";
 
 type Props = {
   card: CardObject,

@@ -1,11 +1,11 @@
 (ns metabase.pulse.render.datetime
   "Logic for rendering datetimes inside Pulses."
-  (:require [clojure.tools.logging :as log]
+  (:require [clojure.string :as str]
+            [clojure.tools.logging :as log]
             [java-time :as t]
-            [metabase.util
-             [date-2 :as u.date]
-             [i18n :refer [trs tru]]
-             [schema :as su]]
+            [metabase.util.date-2 :as u.date]
+            [metabase.util.i18n :refer [trs tru]]
+            [metabase.util.schema :as su]
             [schema.core :as s])
   (:import java.time.Period
            java.time.temporal.Temporal))
@@ -17,20 +17,22 @@
   "Reformat a temporal literal string `s` (i.e., an ISO-8601 string) with a human-friendly format based on the
   column `:unit`."
   [timezone-id s col]
-  (case (:unit col)
-    ;; these types have special formatting
-    :hour    (reformat-temporal-str timezone-id s "h a - MMM YYYY")
-    :week    (str "Week " (reformat-temporal-str timezone-id s "w - YYYY"))
-    :month   (reformat-temporal-str timezone-id s "MMMM YYYY")
-    :quarter (reformat-temporal-str timezone-id s "QQQ - YYYY")
+  (if (str/blank? s)
+    ""
+    (case (:unit col)
+      ;; these types have special formatting
+      :hour    (reformat-temporal-str timezone-id s "h a - MMM yyyy")
+      :week    (str "Week " (reformat-temporal-str timezone-id s "w - YYYY"))
+      :month   (reformat-temporal-str timezone-id s "MMMM yyyy")
+      :quarter (reformat-temporal-str timezone-id s "QQQ - yyyy")
 
-    ;; no special formatting here : return as ISO-8601
-    ;; TODO: probably shouldn't even be showing sparkline for x-of-y groupings?
-    (:year :hour-of-day :day-of-week :week-of-year :month-of-year)
-    s
+      ;; no special formatting here : return as ISO-8601
+      ;; TODO: probably shouldn't even be showing sparkline for x-of-y groupings?
+      (:year :hour-of-day :day-of-week :week-of-year :month-of-year)
+      s
 
-    ;; for everything else return in this format
-    (reformat-temporal-str timezone-id s "MMM d, YYYY")))
+      ;; for everything else return in this format
+      (reformat-temporal-str timezone-id s "MMM d, yyyy"))))
 
 (def ^:private RenderableInterval
   {:interval-start     Temporal
@@ -112,6 +114,6 @@
       [(format-temporal-str timezone-id a col) (format-temporal-str timezone-id b col)])
     (catch Throwable _
       ;; TODO  - there is code that calls this in `render.body` regardless of the types of values
-      (log/warn (trs "FIXME: These aren''t valid temporal literals: {0} {1}. Why are we attemping to format them as such?"
+      (log/warn (trs "FIXME: These aren''t valid temporal literals: {0} {1}. Why are we attempting to format them as such?"
                      (pr-str a) (pr-str b)))
       nil)))

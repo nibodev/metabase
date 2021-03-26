@@ -1,5 +1,3 @@
-/* @flow */
-
 import React from "react";
 
 import NumberPicker from "./NumberPicker";
@@ -81,8 +79,8 @@ export default function DefaultPicker({
             onChange={onValuesChange}
             multi={operator.multi}
             placeholder={placeholder}
-            field={underlyingField}
-            searchField={underlyingField.filterSearchField()}
+            fields={underlyingField ? [underlyingField] : []}
+            disablePKRemappingForSearch={true}
             autoFocus={index === 0}
             alwaysShowOptions={operator.fields.length === 1}
             formatOptions={getFilterArgumentFormatOptions(operator, index)}

@@ -1,5 +1,3 @@
-/* @flow */
-
 import React from "react";
 import { connect } from "react-redux";
 import { createSelector } from "reselect";
@@ -26,7 +24,7 @@ export type Props = {
   // selectorName overrides the default getObject selector
   selectorName?: string,
   // Children render prop
-  children: (props: RenderProps) => ?React$Element<any>,
+  children?: (props: RenderProps) => ?React.Element,
 };
 
 export type RenderProps = {
@@ -95,16 +93,21 @@ export default class EntityObjectLoader extends React.Component {
     );
   }
 
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     // $FlowFixMe: provided by @connect
     const { entityId, fetch } = this.props;
-    fetch(
-      { id: entityId },
-      { reload: this.props.reload, properties: this.props.properties },
-    );
+    if (entityId != null) {
+      fetch(
+        { id: entityId },
+        { reload: this.props.reload, properties: this.props.properties },
+      );
+    }
   }
-  componentWillReceiveProps(nextProps: Props) {
-    if (nextProps.entityId !== this.props.entityId) {
+  UNSAFE_componentWillReceiveProps(nextProps: Props) {
+    if (
+      nextProps.entityId !== this.props.entityId &&
+      this.props.entityId != null
+    ) {
       // $FlowFixMe: provided by @connect
       nextProps.fetch(
         { id: nextProps.entityId },
@@ -133,10 +136,10 @@ export default class EntityObjectLoader extends React.Component {
   };
   render() {
     // $FlowFixMe: provided by @connect
-    const { fetched, error, loadingAndErrorWrapper } = this.props;
+    const { entityId, fetched, error, loadingAndErrorWrapper } = this.props;
     return loadingAndErrorWrapper ? (
       <LoadingAndErrorWrapper
-        loading={!fetched}
+        loading={!fetched && entityId != null}
         error={error}
         children={this.renderChildren}
         noWrapper

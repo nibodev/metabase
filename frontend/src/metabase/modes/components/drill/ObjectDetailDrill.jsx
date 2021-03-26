@@ -1,11 +1,9 @@
-/* @flow */
-
 import { isFK, isPK } from "metabase/lib/schema_metadata";
 import { t } from "ttag";
 import type {
   ClickAction,
   ClickActionProps,
-} from "metabase/meta/types/Visualization";
+} from "metabase-types/types/Visualization";
 
 export default ({ question, clicked }: ClickActionProps): ClickAction[] => {
   if (
@@ -36,6 +34,8 @@ export default ({ question, clicked }: ClickActionProps): ClickAction[] => {
       name: "object-detail",
       section: "details",
       title: t`View details`,
+      buttonType: "horizontal",
+      icon: "document",
       default: true,
       question: () =>
         field ? question.drillPK(field, clicked && clicked.value) : question,

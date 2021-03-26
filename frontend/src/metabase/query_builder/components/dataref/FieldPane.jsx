@@ -49,7 +49,7 @@ export default class FieldPane extends Component {
     updateQuestion: PropTypes.func.isRequired,
   };
 
-  async componentWillMount() {
+  async UNSAFE_componentWillMount() {
     const { field, fetchTableMetadata, fetchFieldValues } = this.props;
     await fetchTableMetadata(field.table_id);
     if (field.has_field_values === "list") {
@@ -78,7 +78,7 @@ export default class FieldPane extends Component {
         query = query.clearAggregations();
       }
 
-      const defaultBreakout = metadata.fields[field.id].getDefaultBreakout();
+      const defaultBreakout = metadata.field(field.id).getDefaultBreakout();
       query = query.breakout(defaultBreakout);
 
       this.props.updateQuestion(query.question());
@@ -89,7 +89,7 @@ export default class FieldPane extends Component {
   newCard = () => {
     const { metadata, field } = this.props;
     const tableId = field.table_id;
-    const dbId = metadata.tables[tableId].database.id;
+    const dbId = metadata.table(tableId).database.id;
 
     const card = createCard();
     card.dataset_query = Q_DEPRECATED.createQuery("query", dbId, tableId);
@@ -104,7 +104,7 @@ export default class FieldPane extends Component {
 
   setQueryDistinct = () => {
     const { metadata, field } = this.props;
-    const defaultBreakout = metadata.fields[field.id].getDefaultBreakout();
+    const defaultBreakout = metadata.field(field.id).getDefaultBreakout();
 
     const card = this.newCard();
     card.dataset_query.query.aggregation = ["rows"];
@@ -114,7 +114,7 @@ export default class FieldPane extends Component {
 
   setQueryCountGroupedBy = chartType => {
     const { metadata, field } = this.props;
-    const defaultBreakout = metadata.fields[field.id].getDefaultBreakout();
+    const defaultBreakout = metadata.field(field.id).getDefaultBreakout();
 
     const card = this.newCard();
     card.dataset_query.query.aggregation = ["count"];

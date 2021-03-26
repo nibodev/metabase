@@ -1,69 +1,59 @@
 (ns metabase.automagic-dashboards.core-test
   (:require [clojure.core.async :as a]
             [clojure.test :refer :all]
-            [expectations :refer :all]
             [java-time :as t]
-            [metabase.automagic-dashboards
-             [core :as magic :refer :all]
-             [rules :as rules]]
-            [metabase.models
-             [card :refer [Card]]
-             [collection :refer [Collection]]
-             [database :refer [Database]]
-             [field :as field :refer [Field]]
-             [metric :refer [Metric]]
-             [permissions :as perms]
-             [permissions-group :as perms-group]
-             [query :as query]
-             [table :as table :refer [Table]]]
+            [metabase.api.common :as api]
+            [metabase.automagic-dashboards.core :as magic]
+            [metabase.automagic-dashboards.rules :as rules]
+            [metabase.mbql.schema :as mbql.s]
+            [metabase.models :refer [Card Collection Database Field Metric Table]]
+            [metabase.models.field :as field]
+            [metabase.models.permissions :as perms]
+            [metabase.models.permissions-group :as perms-group]
+            [metabase.models.query :as query]
             [metabase.query-processor.async :as qp.async]
-            [metabase.test
-             [automagic-dashboards :refer :all]
-             [data :as data]
-             [util :as tu]]
-            [metabase.util
-             [date-2 :as u.date]
-             [i18n :refer [tru]]]
-            [toucan.db :as db]
-            [toucan.util.test :as tt]))
+            [metabase.test :as mt]
+            [metabase.test.automagic-dashboards :as automagic-dashboards.test]
+            [metabase.util :as u]
+            [metabase.util.date-2 :as u.date]
+            [metabase.util.i18n :refer [tru]]
+            [schema.core :as s]
+            [toucan.db :as db]))
 
 ;;; ------------------- `->reference` -------------------
 
-(expect
-  [:field-id 1]
-  (->> (assoc (field/->FieldInstance) :id 1)
-       (#'magic/->reference :mbql)))
+(deftest ->reference-test
+  (is (= [:field 1 nil]
+         (->> (assoc (field/->FieldInstance) :id 1)
+              (#'magic/->reference :mbql))))
 
-(expect
-  [:fk-> 1 2]
-  (->> (assoc (field/->FieldInstance) :id 1 :fk_target_field_id 2)
-       (#'magic/->reference :mbql)))
+  (is (= [:field 2 {:source-field 1}]
+         (->> (assoc (field/->FieldInstance) :id 1 :fk_target_field_id 2)
+              (#'magic/->reference :mbql))))
 
-(expect
-  42
-  (->> 42
-       (#'magic/->reference :mbql)))
+  (is (= 42
+         (->> 42
+              (#'magic/->reference :mbql)))))
 
 
 ;;; ------------------- Rule matching  -------------------
 
-(expect
-  [:entity/UserTable :entity/GenericTable :entity/*]
-  (->> (data/id :users)
-       Table
-       (#'magic/->root)
-       (#'magic/matching-rules (rules/get-rules ["table"]))
-       (map (comp first :applies_to))))
+(deftest rule-matching-test
+  (is (= [:entity/UserTable :entity/GenericTable :entity/*]
+         (->> (mt/id :users)
+              Table
+              (#'magic/->root)
+              (#'magic/matching-rules (rules/get-rules ["table"]))
+              (map (comp first :applies_to)))))
 
-;; Test fallback to GenericTable
-(expect
-  [:entity/GenericTable :entity/*]
-  (->> (-> (data/id :users)
-           Table
-           (assoc :entity_type nil)
-           (#'magic/->root))
-       (#'magic/matching-rules (rules/get-rules ["table"]))
-       (map (comp first :applies_to))))
+  (testing "Test fallback to GenericTable"
+    (is (= [:entity/GenericTable :entity/*]
+           (->> (-> (mt/id :users)
+                    Table
+                    (assoc :entity_type nil)
+                    (#'magic/->root))
+                (#'magic/matching-rules (rules/get-rules ["table"]))
+                (map (comp first :applies_to)))))))
 
 
 ;;; ------------------- `automagic-anaysis` -------------------
@@ -73,79 +63,89 @@
   ([entity cell-query]
    ;; We want to both generate as many cards as we can to catch all aberrations, but also make sure
    ;; that size limiting works.
-   (and (valid-dashboard? (automagic-analysis entity {:cell-query cell-query :show :all}))
-        (valid-dashboard? (automagic-analysis entity {:cell-query cell-query :show 1})))))
+   (testing (u/pprint-to-str (list 'automagic-analysis entity {:cell-query cell-query, :show :all}))
+     (automagic-dashboards.test/test-dashboard-is-valid (magic/automagic-analysis entity {:cell-query cell-query, :show :all})))
+   (testing (u/pprint-to-str (list 'automagic-analysis entity {:cell-query cell-query, :show 1}))
+     (automagic-dashboards.test/test-dashboard-is-valid (magic/automagic-analysis entity {:cell-query cell-query, :show 1})))))
 
-(expect
-  (with-rasta
-    (with-dashboard-cleanup
-      (->> (db/select Table :db_id (data/id))
-           (every? test-automagic-analysis)))))
+(deftest automagic-analysis-test
+  (mt/with-test-user :rasta
+    (automagic-dashboards.test/with-dashboard-cleanup
+      (doseq [table (db/select Table :db_id (mt/id))]
+        (test-automagic-analysis table)))
 
-(expect
-  (with-rasta
-    (with-dashboard-cleanup
-      (->> (automagic-analysis (Table (data/id :venues)) {:show 1})
-           :ordered_cards
-           (filter :card)
-           count
-           (= 1)))))
+    (automagic-dashboards.test/with-dashboard-cleanup
+      (is (= 1
+             (->> (magic/automagic-analysis (Table (mt/id :venues)) {:show 1})
+                  :ordered_cards
+                  (filter :card)
+                  count))))))
 
-(expect
-  (with-rasta
-    (with-dashboard-cleanup
-      (->> (db/select Field
-             :table_id [:in (db/select-field :id Table :db_id (data/id))]
-             :visibility_type "normal")
-           (every? test-automagic-analysis)))))
+(deftest wierd-characters-in-names-test
+  (mt/with-test-user :rasta
+    (automagic-dashboards.test/with-dashboard-cleanup
+      (-> (Table (mt/id :venues))
+          (assoc :display_name "%Venues")
+          test-automagic-analysis))))
 
-(expect
-  (tt/with-temp* [Metric [metric {:table_id (data/id :venues)
-                                  :definition {:aggregation [[:count]]}}]]
-    (with-rasta
-      (with-dashboard-cleanup
+;; TODO -- Not sure what most of the tests below are for, so they just have numbers for names right now. Give them
+;; better names if you can figure out what they test.
+
+(deftest test-1
+  (mt/with-test-user :rasta
+    (automagic-dashboards.test/with-dashboard-cleanup
+      (doseq [field (db/select Field
+                      :table_id [:in (db/select-field :id Table :db_id (mt/id))]
+                      :visibility_type "normal")]
+        (test-automagic-analysis field)))))
+
+(deftest metric-test
+  (mt/with-temp Metric [metric {:table_id (mt/id :venues)
+                                :definition {:aggregation [[:count]]}}]
+    (mt/with-test-user :rasta
+      (automagic-dashboards.test/with-dashboard-cleanup
         (test-automagic-analysis metric)))))
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
-    (tt/with-temp* [Collection [{collection-id :id}]
-                    Card [{card-id :id} {:table_id      (data/id :venues)
+(deftest test-2
+  (mt/with-non-admin-groups-no-root-collection-perms
+    (mt/with-temp* [Collection [{collection-id :id}]
+                    Card [{card-id :id} {:table_id      (mt/id :venues)
                                          :collection_id collection-id
-                                         :dataset_query {:query {:filter [:> [:field-id (data/id :venues :price)] 10]
-                                                                 :source-table (data/id :venues)}
+                                         :dataset_query {:query {:filter [:> [:field (mt/id :venues :price) nil] 10]
+                                                                 :source-table (mt/id :venues)}
                                                          :type :query
-                                                         :database (data/id)}}]]
-      (with-rasta
-        (with-dashboard-cleanup
+                                                         :database (mt/id)}}]]
+      (mt/with-test-user :rasta
+        (automagic-dashboards.test/with-dashboard-cleanup
           (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection-id)
-          (-> card-id Card test-automagic-analysis))))))
+          (test-automagic-analysis (Card card-id)))))))
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
-    (tt/with-temp* [Collection [{collection-id :id}]
-                    Card [{card-id :id} {:table_id      (data/id :venues)
+(deftest test-3
+  (mt/with-non-admin-groups-no-root-collection-perms
+    (mt/with-temp* [Collection [{collection-id :id}]
+                    Card [{card-id :id} {:table_id      (mt/id :venues)
                                          :collection_id collection-id
                                          :dataset_query {:query {:aggregation [[:count]]
-                                                                 :breakout [[:field-id (data/id :venues :category_id)]]
-                                                                 :source-table (data/id :venues)}
+                                                                 :breakout [[:field (mt/id :venues :category_id) nil]]
+                                                                 :source-table (mt/id :venues)}
                                                          :type :query
-                                                         :database (data/id)}}]]
-      (with-rasta
-        (with-dashboard-cleanup
-          (-> card-id Card test-automagic-analysis))))))
+                                                         :database (mt/id)}}]]
+      (mt/with-test-user :rasta
+        (automagic-dashboards.test/with-dashboard-cleanup
+          (test-automagic-analysis (Card card-id)))))))
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
-    (tt/with-temp* [Collection [{collection-id :id}]
+(deftest test-4
+  (mt/with-non-admin-groups-no-root-collection-perms
+    (mt/with-temp* [Collection [{collection-id :id}]
                     Card [{card-id :id} {:table_id      nil
                                          :collection_id collection-id
                                          :dataset_query {:native {:query "select * from users"}
                                                          :type :native
-                                                         :database (data/id)}}]]
-      (with-rasta
-        (with-dashboard-cleanup
+                                                         :database (mt/id)}}]]
+      (mt/with-test-user :rasta
+        (automagic-dashboards.test/with-dashboard-cleanup
           (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection-id)
-          (-> card-id Card test-automagic-analysis))))))
+          (test-automagic-analysis (Card card-id)))))))
 
 (defn- result-metadata-for-query [query]
   (first
@@ -153,289 +153,308 @@
     [(qp.async/result-metadata-for-query-async query)
      (a/timeout 1000)])))
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
-    (let [source-query {:query    {:source-table (data/id :venues)}
+(deftest test-6
+  (mt/with-non-admin-groups-no-root-collection-perms
+    (let [source-query {:query    {:source-table (mt/id :venues)}
                         :type     :query
-                        :database (data/id)}]
-      (tt/with-temp* [Collection [{collection-id :id}]
-                      Card [{source-id :id} {:table_id      (data/id :venues)
+                        :database (mt/id)}]
+      (mt/with-temp* [Collection [{collection-id :id}]
+                      Card [{source-id :id} {:table_id        (mt/id :venues)
                                              :collection_id   collection-id
                                              :dataset_query   source-query
-                                             :result_metadata (with-rasta (result-metadata-for-query source-query))}]
-                      Card [{card-id :id} {:table_id      (data/id :venues)
+                                             :result_metadata (mt/with-test-user :rasta (result-metadata-for-query source-query))}]
+                      Card [{card-id :id} {:table_id      (mt/id :venues)
                                            :collection_id collection-id
-                                           :dataset_query {:query    {:filter       [:> [:field-literal "PRICE" "type/Number"] 10]
+                                           :dataset_query {:query    {:filter       [:> [:field "PRICE" {:base-type "type/Number"}] 10]
                                                                       :source-table (str "card__" source-id)}
                                                            :type     :query
-                                                           :database -1337}}]]
-        (with-rasta
-          (with-dashboard-cleanup
+                                                           :database mbql.s/saved-questions-virtual-database-id}}]]
+        (mt/with-test-user :rasta
+          (automagic-dashboards.test/with-dashboard-cleanup
             (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection-id)
-            (-> card-id Card test-automagic-analysis)))))))
+            (test-automagic-analysis (Card card-id))))))))
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
-    (tt/with-temp* [Collection [{collection-id :id}]
-                    Card [{card-id :id} {:table_id      (data/id :venues)
+(deftest test-7
+  (mt/with-non-admin-groups-no-root-collection-perms
+    (mt/with-temp* [Collection [{collection-id :id}]
+                    Card [{card-id :id} {:table_id      (mt/id :venues)
                                          :collection_id collection-id
-                                         :dataset_query {:query    {:filter       [:> [:field-id (data/id :venues :price)] 10]
-                                                                    :source-table (data/id :venues)}
+                                         :dataset_query {:query    {:filter       [:> [:field (mt/id :venues :price) nil] 10]
+                                                                    :source-table (mt/id :venues)}
                                                          :type     :query
-                                                         :database (data/id)}}]]
-      (with-rasta
-        (with-dashboard-cleanup
+                                                         :database (mt/id)}}]]
+      (mt/with-test-user :rasta
+        (automagic-dashboards.test/with-dashboard-cleanup
           (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection-id)
-          (-> card-id Card test-automagic-analysis))))))
+          (test-automagic-analysis (Card card-id)))))))
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
+(deftest test-8
+  (mt/with-non-admin-groups-no-root-collection-perms
     (let [source-query {:native   {:query "select * from venues"}
                         :type     :native
-                        :database (data/id)}]
-      (tt/with-temp* [Collection [{collection-id :id}]
+                        :database (mt/id)}]
+      (mt/with-temp* [Collection [{collection-id :id}]
                       Card [{source-id :id} {:table_id        nil
                                              :collection_id   collection-id
                                              :dataset_query   source-query
-                                             :result_metadata (with-rasta (result-metadata-for-query source-query))}]
+                                             :result_metadata (mt/with-test-user :rasta (result-metadata-for-query source-query))}]
                       Card [{card-id :id} {:table_id      nil
                                            :collection_id collection-id
-                                           :dataset_query {:query    {:filter       [:> [:field-literal "PRICE" "type/Number"] 10]
+                                           :dataset_query {:query    {:filter       [:> [:field "PRICE" {:base-type "type/Number"}] 10]
                                                                       :source-table (str "card__" source-id)}
                                                            :type     :query
-                                                           :database -1337}}]]
-        (with-rasta
-          (with-dashboard-cleanup
+                                                           :database mbql.s/saved-questions-virtual-database-id}}]]
+        (mt/with-test-user :rasta
+          (automagic-dashboards.test/with-dashboard-cleanup
             (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection-id)
-            (-> card-id Card test-automagic-analysis)))))))
+            (test-automagic-analysis (Card card-id))))))))
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
-    (tt/with-temp* [Collection [{collection-id :id}]
-                    Card [{card-id :id} {:table_id      (data/id :venues)
+(deftest test-9
+  (mt/with-non-admin-groups-no-root-collection-perms
+    (mt/with-temp* [Collection [{collection-id :id}]
+                    Card [{card-id :id} {:table_id      (mt/id :venues)
                                          :collection_id collection-id
                                          :dataset_query {:query    {:aggregation  [[:count]]
-                                                                    :breakout     [[:field-id (data/id :venues :category_id)]]
-                                                                    :source-table (data/id :venues)}
+                                                                    :breakout     [[:field (mt/id :venues :category_id) nil]]
+                                                                    :source-table (mt/id :venues)}
                                                          :type     :query
-                                                         :database (data/id)}}]]
-      (with-rasta
-        (with-dashboard-cleanup
+                                                         :database (mt/id)}}]]
+      (mt/with-test-user :rasta
+        (automagic-dashboards.test/with-dashboard-cleanup
           (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection-id)
-          (-> card-id Card test-automagic-analysis))))))
+          (test-automagic-analysis (Card card-id)))))))
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
-    (tt/with-temp* [Collection [{collection-id :id}]
+(deftest test-10
+  (mt/with-non-admin-groups-no-root-collection-perms
+    (mt/with-temp* [Collection [{collection-id :id}]
                     Card [{card-id :id} {:table_id      nil
                                          :collection_id collection-id
                                          :dataset_query {:native   {:query "select * from users"}
                                                          :type     :native
-                                                         :database (data/id)}}]]
-      (with-rasta
-        (with-dashboard-cleanup
+                                                         :database (mt/id)}}]]
+      (mt/with-test-user :rasta
+        (automagic-dashboards.test/with-dashboard-cleanup
           (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection-id)
-          (-> card-id Card test-automagic-analysis))))))
+          (test-automagic-analysis (Card card-id)))))))
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
-    (tt/with-temp* [Collection [{collection-id :id}]
+(deftest test-11
+  (mt/with-non-admin-groups-no-root-collection-perms
+    (mt/with-temp* [Collection [{collection-id :id}]
                     Card [{card-id :id} {:table_id      nil
                                          :collection_id collection-id
                                          :dataset_query {:native   {:query "select * from users"}
                                                          :type     :native
-                                                         :database (data/id)}}]]
-      (with-rasta
-        (with-dashboard-cleanup
+                                                         :database (mt/id)}}]]
+      (mt/with-test-user :rasta
+        (automagic-dashboards.test/with-dashboard-cleanup
           (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection-id)
-          (-> card-id Card test-automagic-analysis))))))
+          (test-automagic-analysis (Card card-id)))))))
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
-    (tt/with-temp* [Collection [{collection-id :id}]
-                    Card [{card-id :id} {:table_id      (data/id :venues)
+(deftest test-12
+  (mt/with-non-admin-groups-no-root-collection-perms
+    (mt/with-temp* [Collection [{collection-id :id}]
+                    Card [{card-id :id} {:table_id      (mt/id :venues)
                                          :collection_id collection-id
-                                         :dataset_query {:query    {:filter       [:> [:field-id (data/id :venues :price)] 10]
-                                                                    :source-table (data/id :venues)}
+                                         :dataset_query {:query    {:filter       [:> [:field (mt/id :venues :price) nil] 10]
+                                                                    :source-table (mt/id :venues)}
                                                          :type     :query
-                                                         :database (data/id)}}]]
-      (with-rasta
-        (with-dashboard-cleanup
+                                                         :database (mt/id)}}]]
+      (mt/with-test-user :rasta
+        (automagic-dashboards.test/with-dashboard-cleanup
           (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection-id)
           (-> card-id
               Card
-              (test-automagic-analysis [:= [:field-id (data/id :venues :category_id)] 2])))))))
+              (test-automagic-analysis [:= [:field (mt/id :venues :category_id) nil] 2])))))))
 
 
-(expect
-  (tu/with-non-admin-groups-no-root-collection-perms
-    (tt/with-temp* [Collection [{collection-id :id}]
-                    Card [{card-id :id} {:table_id      (data/id :venues)
+(deftest test-13
+  (mt/with-non-admin-groups-no-root-collection-perms
+    (mt/with-temp* [Collection [{collection-id :id}]
+                    Card [{card-id :id} {:table_id      (mt/id :venues)
                                          :collection_id collection-id
-                                         :dataset_query {:query    {:filter       [:> [:field-id (data/id :venues :price)] 10]
-                                                                    :source-table (data/id :venues)}
+                                         :dataset_query {:query    {:filter       [:> [:field (mt/id :venues :price) nil] 10]
+                                                                    :source-table (mt/id :venues)}
                                                          :type     :query
-                                                         :database (data/id)}}]]
-      (with-rasta
-        (with-dashboard-cleanup
+                                                         :database (mt/id)}}]]
+      (mt/with-test-user :rasta
+        (automagic-dashboards.test/with-dashboard-cleanup
           (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection-id)
           (-> card-id
               Card
-              (test-automagic-analysis [:= [:field-id (data/id :venues :category_id)] 2])))))))
+              (test-automagic-analysis [:= [:field (mt/id :venues :category_id) nil] 2])))))))
 
 
-(expect
-  (with-rasta
-    (with-dashboard-cleanup
-      (let [q (query/adhoc-query {:query {:filter [:> [:field-id (data/id :venues :price)] 10]
-                                          :source-table (data/id :venues)}
+(deftest test-14
+  (mt/with-test-user :rasta
+    (automagic-dashboards.test/with-dashboard-cleanup
+      (let [q (query/adhoc-query {:query {:filter [:> [:field (mt/id :venues :price) nil] 10]
+                                          :source-table (mt/id :venues)}
                                   :type :query
-                                  :database (data/id)})]
+                                  :database (mt/id)})]
         (test-automagic-analysis q)))))
 
-(expect
-  (with-rasta
-    (with-dashboard-cleanup
+(deftest test-15
+  (mt/with-test-user :rasta
+    (automagic-dashboards.test/with-dashboard-cleanup
       (let [q (query/adhoc-query {:query {:aggregation [[:count]]
-                                          :breakout [[:field-id (data/id :venues :category_id)]]
-                                          :source-table (data/id :venues)}
+                                          :breakout [[:field (mt/id :venues :category_id) nil]]
+                                          :source-table (mt/id :venues)}
                                   :type :query
-                                  :database (data/id)})]
+                                  :database (mt/id)})]
         (test-automagic-analysis q)))))
 
-(expect
-  (with-rasta
-    (with-dashboard-cleanup
+(deftest test-16
+  (mt/with-test-user :rasta
+    (automagic-dashboards.test/with-dashboard-cleanup
       (let [q (query/adhoc-query {:query {:aggregation [[:count]]
-                                          :breakout [[:fk-> (data/id :checkins) (data/id :venues :category_id)]]
-                                          :source-table (data/id :checkins)}
+                                          :breakout [[:fk-> (mt/id :checkins) (mt/id :venues :category_id)]]
+                                          :source-table (mt/id :checkins)}
                                   :type :query
-                                  :database (data/id)})]
+                                  :database (mt/id)})]
         (test-automagic-analysis q)))))
 
-(expect
-  (with-rasta
-    (with-dashboard-cleanup
-      (let [q (query/adhoc-query {:query {:filter [:> [:field-id (data/id :venues :price)] 10]
-                                          :source-table (data/id :venues)}
+(deftest test-17
+  (mt/with-test-user :rasta
+    (automagic-dashboards.test/with-dashboard-cleanup
+      (let [q (query/adhoc-query {:query {:filter [:> [:field (mt/id :venues :price) nil] 10]
+                                          :source-table (mt/id :venues)}
                                   :type :query
-                                  :database (data/id)})]
-        (test-automagic-analysis q [:= [:field-id (data/id :venues :category_id)] 2])))))
+                                  :database (mt/id)})]
+        (test-automagic-analysis q [:= [:field (mt/id :venues :category_id) nil] 2])))))
 
 
 ;;; ------------------- /candidates -------------------
 
-(expect
-  4
-  (with-rasta
-    (->> (data/db) candidate-tables first :tables count)))
+(deftest candidates-test
+  (testing "/candidates"
+    (testing "should work with the normal test-data DB"
+      (mt/with-test-user :rasta
+        (is (schema= [(s/one {:tables   (s/constrained [s/Any] #(= (count %) 4))
+                              s/Keyword s/Any}
+                             "first result")
+                      s/Any]
+                     (magic/candidate-tables (mt/db))))))
 
-;; /candidates should work with unanalyzed tables
-(expect
-  1
-  (tt/with-temp* [Database [{db-id :id}]
+    (testing "should work with unanalyzed tables"
+      (mt/with-test-user :rasta
+        (mt/with-temp* [Database [{db-id :id}]
+                        Table    [{table-id :id} {:db_id db-id}]
+                        Field    [_ {:table_id table-id}]
+                        Field    [_ {:table_id table-id}]]
+          (automagic-dashboards.test/with-dashboard-cleanup
+            (is (schema= [(s/one {:tables   [(s/one {:table    {:id       (s/eq table-id)
+                                                                s/Keyword s/Any}
+                                                     s/Keyword s/Any}
+                                                    "first Table")]
+                                  s/Keyword s/Any}
+                                 "first result")]
+                         (magic/candidate-tables (Database db-id))))))))))
+
+(deftest call-count-test
+  (mt/with-temp* [Database [{db-id :id}]
                   Table    [{table-id :id} {:db_id db-id}]
                   Field    [_ {:table_id table-id}]
                   Field    [_ {:table_id table-id}]]
-    (with-rasta
-      (with-dashboard-cleanup
-        (count (candidate-tables (Database db-id)))))))
-
-(expect
-  4
-  (tt/with-temp* [Database [{db-id :id}]
-                  Table    [{table-id :id} {:db_id db-id}]
-                  Field    [_ {:table_id table-id}]
-                  Field    [_ {:table_id table-id}]]
-    (with-rasta
-      (with-dashboard-cleanup
+    (mt/with-test-user :rasta
+      ;; make sure the current user permissions set is already fetched so it's not included in the DB call count below
+      @api/*current-user-permissions-set*
+      (automagic-dashboards.test/with-dashboard-cleanup
         (let [database (Database db-id)]
           (db/with-call-counting [call-count]
-            (candidate-tables database)
-            (call-count)))))))
+            (magic/candidate-tables database)
+            (is (= 4
+                   (call-count)))))))))
 
-(expect
-  {:list-like?  true
-   :link-table? false
-   :num-fields 2}
-  (tt/with-temp* [Database [{db-id :id}]
+(deftest empty-table-test
+  (testing "candidate-tables should work with an empty Table (no Fields)"
+    (mt/with-temp* [Database [db]
+                    Table    [_ {:db_id (:id db)}]]
+      (mt/with-test-user :rasta
+        (is (= []
+               (magic/candidate-tables db)))))))
+
+(deftest test-19
+  (mt/with-temp* [Database [{db-id :id}]
                   Table    [{table-id :id} {:db_id db-id}]
-                  Field    [_ {:table_id table-id :special_type :type/PK}]
+                  Field    [_ {:table_id table-id :semantic_type :type/PK}]
                   Field    [_ {:table_id table-id}]]
-    (with-rasta
-      (with-dashboard-cleanup
-        (-> (#'magic/enhance-table-stats [(Table table-id)])
-            first
-            :stats)))))
+    (mt/with-test-user :rasta
+      (automagic-dashboards.test/with-dashboard-cleanup
+        (is (= {:list-like?  true
+                :link-table? false
+                :num-fields 2}
+               (-> (#'magic/enhance-table-stats [(Table table-id)])
+                   first
+                   :stats)))))))
 
-(expect
-  {:list-like?  false
-   :link-table? true
-   :num-fields 3}
-  (tt/with-temp* [Database [{db-id :id}]
+(deftest test-20
+  (mt/with-temp* [Database [{db-id :id}]
                   Table    [{table-id :id} {:db_id db-id}]
-                  Field    [_ {:table_id table-id :special_type :type/PK}]
-                  Field    [_ {:table_id table-id :special_type :type/FK}]
-                  Field    [_ {:table_id table-id :special_type :type/FK}]]
-    (with-rasta
-      (with-dashboard-cleanup
-        (-> (#'magic/enhance-table-stats [(Table table-id)])
-            first
-            :stats)))))
+                  Field    [_ {:table_id table-id :semantic_type :type/PK}]
+                  Field    [_ {:table_id table-id :semantic_type :type/FK}]
+                  Field    [_ {:table_id table-id :semantic_type :type/FK}]]
+    (mt/with-test-user :rasta
+      (automagic-dashboards.test/with-dashboard-cleanup
+        (is (= {:list-like?  false
+                :link-table? true
+                :num-fields 3}
+               (-> (#'magic/enhance-table-stats [(Table table-id)])
+                   first
+                   :stats)))))))
 
 
 ;;; ------------------- Definition overloading -------------------
 
-;; Identity
-(expect
-  :d1
-  (-> [{:d1 {:field_type [:type/Category] :score 100}}]
-      (#'magic/most-specific-definition)
-      first
-      key))
+(deftest test-21
+  (testing "Identity"
+    (is (= :d1
+           (-> [{:d1 {:field_type [:type/Category] :score 100}}]
+               (#'magic/most-specific-definition)
+               first
+               key)))))
 
-;; Base case: more ancestors
-(expect
-  :d2
-  (-> [{:d1 {:field_type [:type/Category] :score 100}}
-       {:d2 {:field_type [:type/State] :score 100}}]
-      (#'magic/most-specific-definition)
-      first
-      key))
+(deftest test-22
+  (testing "Base case: more ancestors"
+    (is (= :d2
+           (-> [{:d1 {:field_type [:type/Category] :score 100}}
+                {:d2 {:field_type [:type/State] :score 100}}]
+               (#'magic/most-specific-definition)
+               first
+               key)))))
 
-;; Break ties based on the number of additional filters
-(expect
-  :d3
-  (-> [{:d1 {:field_type [:type/Category] :score 100}}
-       {:d2 {:field_type [:type/State] :score 100}}
-       {:d3 {:field_type [:type/State]
-             :named      "foo"
-             :score      100}}]
-      (#'magic/most-specific-definition)
-      first
-      key))
+(deftest test-23
+  (testing "Break ties based on the number of additional filters"
+    (is (= :d3
+           (-> [{:d1 {:field_type [:type/Category] :score 100}}
+                {:d2 {:field_type [:type/State] :score 100}}
+                {:d3 {:field_type [:type/State]
+                      :named      "foo"
+                      :score      100}}]
+               (#'magic/most-specific-definition)
+               first
+               key)))))
 
-;; Break ties on score
-(expect
-  :d2
-  (-> [{:d1 {:field_type [:type/Category] :score 100}}
-       {:d2 {:field_type [:type/State] :score 100}}
-       {:d3 {:field_type [:type/State] :score 90}}]
-      (#'magic/most-specific-definition)
-      first
-      key))
+(deftest test-24
+  (testing "Break ties on score"
+    (is (= :d2
+           (-> [{:d1 {:field_type [:type/Category] :score 100}}
+                {:d2 {:field_type [:type/State] :score 100}}
+                {:d3 {:field_type [:type/State] :score 90}}]
+               (#'magic/most-specific-definition)
+               first
+               key)))))
 
-;; Number of additional filters has precedence over score
-(expect
-  :d3
-  (-> [{:d1 {:field_type [:type/Category] :score 100}}
-       {:d2 {:field_type [:type/State] :score 100}}
-       {:d3 {:field_type [:type/State]
-             :named      "foo"
-             :score      0}}]
-      (#'magic/most-specific-definition)
-      first
-      key))
+(deftest test-25
+  (testing "Number of additional filters has precedence over score"
+    (is (= :d3
+           (-> [{:d1 {:field_type [:type/Category] :score 100}}
+                {:d2 {:field_type [:type/State] :score 100}}
+                {:d3 {:field_type [:type/State]
+                      :named      "foo"
+                      :score      0}}]
+               (#'magic/most-specific-definition)
+               first
+               key)))))
 
 
 ;;; ------------------- Datetime resolution inference -------------------
@@ -498,6 +517,6 @@
 (deftest handlers-test
   (testing "Make sure we have handlers for all the units available"
     (doseq [unit (disj (set (concat u.date/extract-units u.date/truncate-units))
-                       :iso-day-of-week :iso-day-of-year :iso-week :iso-week-of-year :millisecond)]
+                       :iso-day-of-year :millisecond)]
       (testing unit
         (is (some? (#'magic/humanize-datetime "1990-09-09T12:30:00" unit)))))))
