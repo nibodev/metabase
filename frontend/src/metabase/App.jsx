@@ -1,11 +1,12 @@
-/* @flow weak */
-
 import React, { Component } from "react";
 import { connect } from "react-redux";
 import ScrollToTop from "metabase/hoc/ScrollToTop";
 import Navbar from "metabase/nav/containers/Navbar";
 
+import { IFRAMED, initializeIframeResizer } from "metabase/lib/dom";
+
 import UndoListing from "metabase/containers/UndoListing";
+import ErrorCard from "metabase/components/ErrorCard";
 
 import {
   Archived,
@@ -44,28 +45,30 @@ const getErrorComponent = ({ status, data, context }) => {
 @connect(mapStateToProps)
 export default class App extends Component {
   state = {
-    hasError: false,
+    errorInfo: undefined,
   };
 
-  componentDidCatch(error, info) {
-    console.error("Error caught in <App>", error, info);
-    this.setState({ hasError: true });
+  constructor(props) {
+    super(props);
+    initializeIframeResizer();
+  }
+
+  componentDidCatch(error, errorInfo) {
+    this.setState({ errorInfo });
   }
 
   render() {
     const { children, currentUser, location, errorPage } = this.props;
-
-    if (this.state.hasError) {
-      return <div>😢</div>;
-    }
+    const { errorInfo } = this.state;
 
     return (
       <ScrollToTop>
         <div className="relative">
-          {currentUser && <Navbar location={location} />}
+          {currentUser && !IFRAMED && <Navbar location={location} />}
           {errorPage ? getErrorComponent(errorPage) : children}
           <UndoListing />
         </div>
+        <ErrorCard errorInfo={errorInfo} />
       </ScrollToTop>
     );
   }

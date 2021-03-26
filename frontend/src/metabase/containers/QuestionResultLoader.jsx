@@ -1,10 +1,8 @@
-/* @flow */
-
 import React from "react";
 import { defer } from "metabase/lib/promise";
 
-import type { Dataset } from "metabase/meta/types/Dataset";
-import type { RawSeries } from "metabase/meta/types/Visualization";
+import type { Dataset } from "metabase-types/types/Dataset";
+import type { RawSeries } from "metabase-types/types/Visualization";
 
 import Question from "metabase-lib/lib/Question";
 
@@ -18,9 +16,12 @@ export type ChildProps = {
   reload: () => void,
 };
 
+type OnLoadCallback = (results: ?(Dataset[])) => void;
+
 type Props = {
   question: ?Question,
-  children?: (props: ChildProps) => React$Element<any>,
+  children?: (props: ChildProps) => React.Element,
+  onLoad?: OnLoadCallback,
 };
 
 type State = {
@@ -57,24 +58,24 @@ export class QuestionResultLoader extends React.Component {
 
   _cancelDeferred: ?() => void;
 
-  componentWillMount() {
-    this._loadResult(this.props.question);
+  UNSAFE_componentWillMount() {
+    this._loadResult(this.props.question, this.props.onLoad);
   }
 
-  componentWillReceiveProps(nextProps: Props) {
+  UNSAFE_componentWillReceiveProps(nextProps: Props) {
     // if the question is different, we need to do a fresh load
     if (
       nextProps.question &&
       !nextProps.question.isEqual(this.props.question)
     ) {
-      this._loadResult(nextProps.question);
+      this._loadResult(nextProps.question, nextProps.onLoad);
     }
   }
 
   /*
    * load the result by calling question.apiGetResults
    */
-  async _loadResult(question: ?Question) {
+  async _loadResult(question: ?Question, onLoad: ?OnLoadCallback) {
     // we need to have a question for anything to happen
     if (question) {
       try {
@@ -91,6 +92,11 @@ export class QuestionResultLoader extends React.Component {
 
         // setState with our result, remove our cancel since we've finished
         this.setState({ loading: false, results });
+
+        // handle onLoad prop
+        if (onLoad) {
+          setTimeout(() => onLoad && onLoad(results));
+        }
       } catch (error) {
         this.setState({ loading: false, error });
       }
@@ -106,7 +112,7 @@ export class QuestionResultLoader extends React.Component {
    * load again
    */
   _reload = () => {
-    this._loadResult(this.props.question);
+    this._loadResult(this.props.question, this.props.onLoad);
   };
 
   /*

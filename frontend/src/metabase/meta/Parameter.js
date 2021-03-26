@@ -1,29 +1,163 @@
-/* @flow */
-
-import type { DatasetQuery } from "metabase/meta/types/Card";
+import type { DatasetQuery } from "metabase-types/types/Card";
 import type {
   TemplateTag,
   LocalFieldReference,
   ForeignFieldReference,
   FieldFilter,
-} from "metabase/meta/types/Query";
+} from "metabase-types/types/Query";
 import type {
   Parameter,
+  ParameterOption,
   ParameterInstance,
   ParameterTarget,
   ParameterValue,
   ParameterValueOrArray,
   ParameterValues,
   ParameterType,
-} from "metabase/meta/types/Parameter";
-import type { FieldId } from "metabase/meta/types/Field";
-import type { Metadata } from "metabase/meta/types/Metadata";
-
+} from "metabase-types/types/Parameter";
+import type { FieldId } from "metabase-types/types/Field";
+import type Metadata from "metabase-lib/lib/metadata/Metadata";
+import type Field from "metabase-lib/lib/metadata/Field";
+import Dimension, { FieldDimension } from "metabase-lib/lib/Dimension";
 import moment from "moment";
-
-import * as Q_DEPRECATED from "metabase/lib/query";
-
+import { t } from "ttag";
+import * as FIELD_REF from "metabase/lib/query/field_ref";
 import { isNumericBaseType } from "metabase/lib/schema_metadata";
+import Variable, { TemplateTagVariable } from "metabase-lib/lib/Variable";
+
+type DimensionFilter = (dimension: Dimension) => boolean;
+type TemplateTagFilter = (tag: TemplateTag) => boolean;
+type FieldPredicate = (field: Field) => boolean;
+type VariableFilter = (variable: Variable) => boolean;
+
+export const PARAMETER_OPTIONS: ParameterOption[] = [
+  {
+    type: "date/month-year",
+    name: t`Month and Year`,
+    description: t`Like January, 2016`,
+  },
+  {
+    type: "date/quarter-year",
+    name: t`Quarter and Year`,
+    description: t`Like Q1, 2016`,
+  },
+  {
+    type: "date/single",
+    name: t`Single Date`,
+    description: t`Like January 31, 2016`,
+  },
+  {
+    type: "date/range",
+    name: t`Date Range`,
+    description: t`Like December 25, 2015 - February 14, 2016`,
+  },
+  {
+    type: "date/relative",
+    name: t`Relative Date`,
+    description: t`Like "the last 7 days" or "this month"`,
+  },
+  {
+    type: "date/all-options",
+    name: t`Date Filter`,
+    menuName: t`All Options`,
+    description: t`Contains all of the above`,
+  },
+  {
+    type: "location/city",
+    name: t`City`,
+  },
+  {
+    type: "location/state",
+    name: t`State`,
+  },
+  {
+    type: "location/zip_code",
+    name: t`ZIP or Postal Code`,
+  },
+  {
+    type: "location/country",
+    name: t`Country`,
+  },
+  {
+    type: "id",
+    name: t`ID`,
+  },
+  {
+    type: "category",
+    name: t`Category`,
+  },
+];
+
+function fieldFilterForParameter(parameter: Parameter) {
+  return fieldFilterForParameterType(parameter.type);
+}
+
+function fieldFilterForParameterType(
+  parameterType: ParameterType,
+): FieldPredicate {
+  const [type] = parameterType.split("/");
+  switch (type) {
+    case "date":
+      return (field: Field) => field.isDate();
+    case "id":
+      return (field: Field) => field.isID();
+    case "category":
+      return (field: Field) => field.isCategory();
+  }
+
+  switch (parameterType) {
+    case "location/city":
+      return (field: Field) => field.isCity();
+    case "location/state":
+      return (field: Field) => field.isState();
+    case "location/zip_code":
+      return (field: Field) => field.isZipCode();
+    case "location/country":
+      return (field: Field) => field.isCountry();
+  }
+  return (field: Field) => false;
+}
+
+export function parameterOptionsForField(field: Field): ParameterOption[] {
+  return PARAMETER_OPTIONS.filter(option =>
+    fieldFilterForParameterType(option.type)(field),
+  );
+}
+
+export function dimensionFilterForParameter(
+  parameter: Parameter,
+): DimensionFilter {
+  const fieldFilter = fieldFilterForParameter(parameter);
+  return dimension => fieldFilter(dimension.field());
+}
+
+export function variableFilterForParameter(
+  parameter: Parameter,
+): VariableFilter {
+  const tagFilter = tagFilterForParameter(parameter);
+  return variable => {
+    if (variable instanceof TemplateTagVariable) {
+      const tag = variable.tag();
+      return tag ? tagFilter(tag) : false;
+    }
+    return false;
+  };
+}
+
+function tagFilterForParameter(parameter: Parameter): TemplateTagFilter {
+  const [type, subtype] = parameter.type.split("/");
+  switch (type) {
+    case "date":
+      return (tag: TemplateTag) => subtype === "single" && tag.type === "date";
+    case "location":
+      return (tag: TemplateTag) => tag.type === "number" || tag.type === "text";
+    case "id":
+      return (tag: TemplateTag) => tag.type === "number" || tag.type === "text";
+    case "category":
+      return (tag: TemplateTag) => tag.type === "number" || tag.type === "text";
+  }
+  return (tag: TemplateTag) => false;
+}
 
 // NOTE: this should mirror `template-tag-parameters` in src/metabase/api/embed.clj
 export function getTemplateTagParameters(tags: TemplateTag[]): Parameter[] {
@@ -72,11 +206,11 @@ export function getParameterTargetFieldId(
         const templateTag =
           datasetQuery.native["template-tags"][String(dimension[1])];
         if (templateTag && templateTag.type === "dimension") {
-          return Q_DEPRECATED.getFieldTargetId(templateTag.dimension);
+          return FIELD_REF.getFieldTargetId(templateTag.dimension);
         }
       }
     } else {
-      return Q_DEPRECATED.getFieldTargetId(dimension);
+      return FIELD_REF.getFieldTargetId(dimension);
     }
   }
   return null;
@@ -87,6 +221,14 @@ type DeserializeFn = (
   match: any[],
   fieldRef: LocalFieldReference | ForeignFieldReference,
 ) => FieldFilter;
+
+const withTemporalUnit = (fieldRef, unit) => {
+  const dimension =
+    (fieldRef && FieldDimension.parseMBQLOrWarn(fieldRef)) ||
+    new FieldDimension(null);
+
+  return dimension.withTemporalUnit(unit).mbql();
+};
 
 const timeParameterValueDeserializers: Deserializer[] = [
   {
@@ -126,7 +268,7 @@ const timeParameterValueDeserializers: Deserializer[] = [
     testRegex: /^(\d{4}-\d{2})$/,
     deserialize: (matches, fieldRef) => [
       "=",
-      ["datetime-field", fieldRef, "month"],
+      withTemporalUnit(fieldRef, "month"),
       moment(matches[0], "YYYY-MM").format("YYYY-MM-DD"),
     ],
   },
@@ -134,7 +276,7 @@ const timeParameterValueDeserializers: Deserializer[] = [
     testRegex: /^(Q\d-\d{4})$/,
     deserialize: (matches, fieldRef) => [
       "=",
-      ["datetime-field", fieldRef, "quarter"],
+      withTemporalUnit(fieldRef, "quarter"),
       moment(matches[0], "[Q]Q-YYYY").format("YYYY-MM-DD"),
     ],
   },
@@ -175,19 +317,18 @@ export function stringParameterValueToMBQL(
   parameterValue: ParameterValueOrArray,
   fieldRef: LocalFieldReference | ForeignFieldReference,
 ): ?FieldFilter {
-  if (Array.isArray(parameterValue)) {
-    // $FlowFixMe: thinks we're returning a nested array which concat does not do
-    return ["=", fieldRef].concat(parameterValue);
-  } else {
-    return ["=", fieldRef, parameterValue];
-  }
+  // $FlowFixMe: thinks we're returning a nested array which concat does not do
+  return ["=", fieldRef].concat(parameterValue);
 }
 
 export function numberParameterValueToMBQL(
   parameterValue: ParameterValue,
   fieldRef: LocalFieldReference | ForeignFieldReference,
 ): ?FieldFilter {
-  return ["=", fieldRef, parseFloat(parameterValue)];
+  // $FlowFixMe: thinks we're returning a nested array which concat does not do
+  return ["=", fieldRef].concat(
+    [].concat(parameterValue).map(v => parseFloat(v)),
+  );
 }
 
 /** compiles a parameter with value to an MBQL clause */
@@ -211,8 +352,8 @@ export function parameterToMBQLFilter(
   if (parameter.type.indexOf("date/") === 0) {
     return dateParameterValueToMBQL(parameter.value, fieldRef);
   } else {
-    const fieldId = Q_DEPRECATED.getFieldTargetId(fieldRef);
-    const field = metadata.fields[fieldId];
+    const fieldId = FIELD_REF.getFieldTargetId(fieldRef);
+    const field = metadata.field(fieldId);
     // if the field is numeric, parse the value as a number
     if (isNumericBaseType(field)) {
       return numberParameterValueToMBQL(parameter.value, fieldRef);

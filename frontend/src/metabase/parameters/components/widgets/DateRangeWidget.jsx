@@ -35,7 +35,7 @@ export default class DateRangeWidget extends Component {
       : "";
   };
 
-  componentWillReceiveProps(nextProps) {
+  UNSAFE_componentWillReceiveProps(nextProps) {
     if (nextProps.value !== this.props.value) {
       this.setState(parseDateRangeValue(nextProps.value));
     }
@@ -44,20 +44,18 @@ export default class DateRangeWidget extends Component {
   render() {
     const { start, end } = this.state;
     return (
-      <div className="p1">
-        <Calendar
-          initial={start ? moment(start) : null}
-          selected={start ? moment(start) : null}
-          selectedEnd={end ? moment(end) : null}
-          onChange={(start, end) => {
-            if (end == null) {
-              this.setState({ start, end });
-            } else {
-              this.props.setValue(serializeDateRangeValue({ start, end }));
-            }
-          }}
-        />
-      </div>
+      <Calendar
+        initial={start ? moment(start) : null}
+        selected={start ? moment(start) : null}
+        selectedEnd={end ? moment(end) : null}
+        onChange={(start, end) => {
+          if (end == null) {
+            this.setState({ start, end });
+          } else {
+            this.props.setValue(serializeDateRangeValue({ start, end }));
+          }
+        }}
+      />
     );
   }
 }

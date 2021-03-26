@@ -1,5 +1,3 @@
-/* @flow */
-
 import type StructuredQuery from "../StructuredQuery";
 
 export default class MBQLArrayClause extends Array {
@@ -12,7 +10,7 @@ export default class MBQLArrayClause extends Array {
     _private(this, "_query", query);
   }
 
-  set(mbql: Array<any>) {
+  set(mbql: any[]) {
     return new this.constructor(mbql, this._index, this._query);
   }
 
@@ -54,6 +52,11 @@ export default class MBQLArrayClause extends Array {
    */
   metadata() {
     return this._query.metadata();
+  }
+
+  raw(): any[] {
+    // $FlowFixMe
+    return [...this];
   }
 }
 

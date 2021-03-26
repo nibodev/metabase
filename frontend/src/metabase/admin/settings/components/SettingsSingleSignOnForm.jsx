@@ -23,7 +23,7 @@ export default class SettingsSingleSignOnForm extends Component {
     updateSetting: PropTypes.func.isRequired,
   };
 
-  componentWillMount() {
+  UNSAFE_componentWillMount() {
     const { elements } = this.props;
     const clientID = _.findWhere(elements, { key: "google-auth-client-id" });
     const domain = _.findWhere(elements, {
@@ -126,9 +126,12 @@ export default class SettingsSingleSignOnForm extends Component {
                 href="https://developers.google.com/identity/sign-in/web/devconsole-project"
                 target="_blank"
               >
-                here.
+                here
               </a>
-            )}`}
+            )}.`}
+          </p>
+          <p className="text-medium">
+            {t`Be sure to include the full client ID, including the apps.googleusercontent.com suffix.`}
           </p>
           <InputBlurChange
             className="SettingsInput AdminInput bordered rounded h3"

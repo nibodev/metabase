@@ -311,25 +311,20 @@ export const GRAPH_GOAL_SETTINGS = {
   },
 };
 
-// with more than this many rows, don't display values on top of bars by default
-const AUTO_SHOW_VALUES_MAX_ROWS = 25;
-
 export const GRAPH_DISPLAY_VALUES_SETTINGS = {
   "graph.show_values": {
     section: t`Display`,
     title: t`Show values on data points`,
     widget: "toggle",
     getHidden: (series, vizSettings) =>
-      series.length > 1 || vizSettings["stackable.stack_type"] === "normalized",
-    getDefault: ([{ card, data }]) =>
-      card.display === "bar" && data.rows.length < AUTO_SHOW_VALUES_MAX_ROWS,
+      vizSettings["stackable.stack_type"] === "normalized",
+    default: false,
   },
   "graph.label_value_frequency": {
     section: t`Display`,
     title: t`Values to show`,
     widget: "radio",
     getHidden: (series, vizSettings) =>
-      series.length > 1 ||
       vizSettings["graph.show_values"] !== true ||
       vizSettings["stackable.stack_type"] === "normalized",
     props: {
@@ -339,6 +334,23 @@ export const GRAPH_DISPLAY_VALUES_SETTINGS = {
       ],
     },
     default: "fit",
+    readDependencies: ["graph.show_values"],
+  },
+  "graph.label_value_formatting": {
+    section: t`Display`,
+    title: t`Value formatting`,
+    widget: "radio",
+    getHidden: (series, vizSettings) =>
+      vizSettings["graph.show_values"] !== true ||
+      vizSettings["stackable.stack_type"] === "normalized",
+    props: {
+      options: [
+        { name: t`Auto`, value: "auto" },
+        { name: t`Compact`, value: "compact" },
+        { name: t`Full`, value: "full" },
+      ],
+    },
+    default: "auto",
     readDependencies: ["graph.show_values"],
   },
 };

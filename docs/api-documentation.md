@@ -1,4 +1,8 @@
-# API Documentation for Metabase v0.32.2
+# API Documentation for Metabase
+
+_This file was generated from source comments by `lein run api-documentation`_.
+
+Check out an introduction to the [Metabase API](https://www.metabase.com/learn/developing-applications/advanced-metabase/metabase-api.html).
 
 ## `GET /api/activity/`
 
@@ -45,7 +49,7 @@ Create a new Alert.
 
 *  **`alert_condition`** value must be one of: `goal`, `rows`.
 
-*  **`card`** value must be a map with the keys `id`, `include_csv`, and `include_xls`.
+*  **`card`** value must be a map with the keys `id`, `include_csv`, `include_xls`, and `dashboard_card_id`.
 
 *  **`channels`** value must be an array. Each value must be a map. The array cannot be empty.
 
@@ -66,7 +70,7 @@ Update a `Alert` with ID.
 
 *  **`alert_condition`** value may be nil, or if non-nil, value must be one of: `goal`, `rows`.
 
-*  **`card`** value may be nil, or if non-nil, value must be a map with the keys `id`, `include_csv`, and `include_xls`.
+*  **`card`** value may be nil, or if non-nil, value must be a map with the keys `id`, `include_csv`, `include_xls`, and `dashboard_card_id`.
 
 *  **`channels`** value may be nil, or if non-nil, value must be an array. Each value must be a map. The array cannot be empty.
 
@@ -394,13 +398,9 @@ Run the query associated with a Card, and return its results as a file in the sp
 
 *  **`card-id`** 
 
-*  **`export-format`** value must be one of: `csv`, `json`, `xlsx`.
+*  **`export-format`** value must be one of: `api`, `csv`, `json`, `xlsx`.
 
 *  **`parameters`** value may be nil, or if non-nil, value must be a valid JSON string.
-
-*  **`respond`** 
-
-*  **`raise`** 
 
 
 ## `POST /api/card/collections`
@@ -413,6 +413,19 @@ Bulk update endpoint for Card Collections. Move a set of `Cards` with CARD_IDS i
 *  **`card_ids`** value must be an array. Each value must be an integer greater than zero.
 
 *  **`collection_id`** value may be nil, or if non-nil, value must be an integer greater than zero.
+
+
+## `POST /api/card/pivot/:card-id/query`
+
+Run the query associated with a Card.
+
+##### PARAMS:
+
+*  **`card-id`** 
+
+*  **`parameters`** 
+
+*  **`ignore_cache`** value may be nil, or if non-nil, value must be a boolean.
 
 
 ## `POST /api/card/related`
@@ -471,6 +484,8 @@ Fetch a list of all Collections that the current user has read permissions for (
 
 *  **`archived`** value may be nil, or if non-nil, value must be a valid boolean string ('true' or 'false').
 
+*  **`namespace`** value may be nil, or if non-nil, value must be a non-blank string.
+
 
 ## `GET /api/collection/:id`
 
@@ -492,7 +507,7 @@ Fetch a specific Collection's items with the following options:
 
 *  **`id`** 
 
-*  **`model`** value may be nil, or if non-nil, value must be one of: `card`, `collection`, `dashboard`, `pulse`.
+*  **`model`** value may be nil, or if non-nil, value must be one of: `card`, `collection`, `dashboard`, `pulse`, `snippet`.
 
 *  **`archived`** value may be nil, or if non-nil, value must be a valid boolean string ('true' or 'false').
 
@@ -503,10 +518,18 @@ Fetch a graph of all Collection Permissions.
 
 You must be a superuser to do this.
 
+##### PARAMS:
+
+*  **`namespace`** value may be nil, or if non-nil, value must be a non-blank string.
+
 
 ## `GET /api/collection/root`
 
 Return the 'Root' Collection object with standard details added
+
+##### PARAMS:
+
+*  **`namespace`** value may be nil, or if non-nil, value must be a non-blank string.
 
 
 ## `GET /api/collection/root/items`
@@ -522,11 +545,30 @@ Fetch objects that the current user should see at their root level. As mentioned
   This endpoint is intended to power a 'Root Folder View' for the Current User, so regardless you'll see all the
   top-level objects you're allowed to access.
 
+  By default, this will show the 'normal' Collections namespace; to view a different Collections namespace, such as
+  `snippets`, you can pass the `?namespace=` parameter.
+
 ##### PARAMS:
 
-*  **`model`** value may be nil, or if non-nil, value must be one of: `card`, `collection`, `dashboard`, `pulse`.
+*  **`model`** value may be nil, or if non-nil, value must be one of: `card`, `collection`, `dashboard`, `pulse`, `snippet`.
 
 *  **`archived`** value may be nil, or if non-nil, value must be a valid boolean string ('true' or 'false').
+
+*  **`namespace`** value may be nil, or if non-nil, value must be a non-blank string.
+
+
+## `GET /api/collection/tree`
+
+Similar to `GET /`, but returns Collections in a tree structure, e.g.
+
+    [{:name     "A"
+      :children [{:name "B"}
+                 {:name     "C"
+                  :children [{:name     "D"
+                              :children [{:name "E"}]}
+                             {:name     "F"
+                              :children [{:name "G"}]}]}]}
+     {:name "H"}]
 
 
 ## `POST /api/collection/`
@@ -542,6 +584,8 @@ Create a new Collection.
 *  **`description`** value may be nil, or if non-nil, value must be a non-blank string.
 
 *  **`parent_id`** value may be nil, or if non-nil, value must be an integer greater than zero.
+
+*  **`namespace`** value may be nil, or if non-nil, value must be a non-blank string.
 
 
 ## `PUT /api/collection/:id`
@@ -573,6 +617,8 @@ You must be a superuser to do this.
 
 ##### PARAMS:
 
+*  **`namespace`** value may be nil, or if non-nil, value must be a non-blank string.
+
 *  **`body`** value must be a map.
 
 
@@ -598,7 +644,7 @@ Delete a Dashboard.
 
 ## `DELETE /api/dashboard/:id/cards`
 
-Remove a DashboardCard from a Dashboard.
+Remove a `DashboardCard` from a Dashboard.
 
 ##### PARAMS:
 
@@ -631,11 +677,50 @@ Get `Dashboards`. With filter option `f` (default `all`), restrict results as fo
 
 ## `GET /api/dashboard/:id`
 
-Get Dashboard with `id`.
+Get Dashboard with ID.
 
 ##### PARAMS:
 
 *  **`id`** 
+
+
+## `GET /api/dashboard/:id/params/:param-key/search/:query`
+
+Fetch possible values of the parameter whose ID is `:param-key` that contain `:query`. Optionally restrict
+  these values by passing query parameters like `other-parameter=value` e.g.
+
+    ;; fetch values for Dashboard 1 parameter 'abc' that contain 'Cam' and are possible when parameter 'def' is set
+    ;; to 100
+     GET /api/dashboard/1/params/abc/search/Cam?def=100
+
+  Currently limited to first 100 results
+
+##### PARAMS:
+
+*  **`id`** 
+
+*  **`param-key`** 
+
+*  **`query`** 
+
+*  **`query-params`** 
+
+
+## `GET /api/dashboard/:id/params/:param-key/values`
+
+Fetch possible values of the parameter whose ID is `:param-key`. Optionally restrict these values by passing query
+  parameters like `other-parameter=value` e.g.
+
+    ;; fetch values for Dashboard 1 parameter 'abc' that are possible when parameter 'def' is set to 100
+    GET /api/dashboard/1/params/abc/values?def=100
+
+##### PARAMS:
+
+*  **`id`** 
+
+*  **`param-key`** 
+
+*  **`query-params`** 
 
 
 ## `GET /api/dashboard/:id/related`
@@ -649,7 +734,7 @@ Return related entities.
 
 ## `GET /api/dashboard/:id/revisions`
 
-Fetch Revisions for Dashboard with `id`.
+Fetch `Revisions` for Dashboard with ID.
 
 ##### PARAMS:
 
@@ -662,6 +747,36 @@ Fetch a list of Dashboards where `enable_embedding` is `true`. The dashboards ca
   endpoints and a signed JWT.
 
 You must be a superuser to do this.
+
+
+## `GET /api/dashboard/params/valid-filter-fields`
+
+Utility endpoint for powering Dashboard UI. Given some set of `filtered` Field IDs (presumably Fields used in
+  parameters) and a set of `filtering` Field IDs that will be used to restrict values of `filtered` Fields, for each
+  `filtered` Field ID return the subset of `filtering` Field IDs that would actually be used in a chain filter query
+  with these Fields.
+
+  e.g. in a chain filter query like
+
+    GET /api/dashboard/10/params/PARAM_1/values?PARAM_2=100
+
+  Assume `PARAM_1` maps to Field 1 and `PARAM_2` maps to Fields 2 and 3. The underlying MBQL query may or may not
+  filter against Fields 2 and 3, depending on whether an FK relationship that lets us create a join against Field 1
+  can be found. You can use this endpoint to determine which of those Fields is actually used:
+
+    GET /api/dashboard/params/valid-filter-fields?filtered=1&filtering=2&filtering=3
+    ;; ->
+    {1 [2 3]}
+
+  Results are returned as a map of
+
+    `filtered` Field ID -> subset of `filtering` Field IDs that would be used in chain filter query
+
+##### PARAMS:
+
+*  **`filtered`** value must satisfy one of the following requirements: 1) value must be a valid integer greater than zero. 2) value must be an array. Each value must be a valid integer greater than zero. The array cannot be empty.
+
+*  **`filtering`** value may be nil, or if non-nil, value must satisfy one of the following requirements: 1) value must be a valid integer greater than zero. 2) value must be an array. Each value must be a valid integer greater than zero. The array cannot be empty.
 
 
 ## `GET /api/dashboard/public`
@@ -725,7 +840,7 @@ Copy a Dashboard.
 
 ## `POST /api/dashboard/:id/cards`
 
-Add a Card to a Dashboard.
+Add a `Card` to a Dashboard.
 
 ##### PARAMS:
 
@@ -751,7 +866,7 @@ Favorite a Dashboard.
 
 ## `POST /api/dashboard/:id/revert`
 
-Revert a Dashboard to a prior Revision.
+Revert a Dashboard to a prior `Revision`.
 
 ##### PARAMS:
 
@@ -821,7 +936,7 @@ Update a Dashboard.
 
 ## `PUT /api/dashboard/:id/cards`
 
-Update Cards on a Dashboard. Request body should have the form:
+Update `Cards` on a Dashboard. Request body should have the form:
 
     {:cards [{:id     ...
               :sizeX  ...
@@ -849,9 +964,18 @@ Delete a `Database`.
 
 ## `GET /api/database/`
 
-Fetch all `Databases`. `include_tables` means we should hydrate the Tables belonging to each DB. `include_cards` here
-  means we should also include virtual Table entries for saved Questions, e.g. so we can easily use them as source
-  Tables in queries. Default for both is `false`.
+Fetch all `Databases`.
+
+  * `include=tables` means we should hydrate the Tables belonging to each DB. Default: `false`.
+
+  * `saved` means we should include the saved questions virtual database. Default: `false`.
+
+  * `include_tables` is a legacy alias for `include=tables`, but should be considered deprecated as of 0.35.0, and will
+    be removed in a future release.
+
+  * `include_cards` here means we should also include virtual Table entries for saved Questions, e.g. so we can easily
+    use them as source Tables in queries. This is a deprecated alias for `saved=true` + `include=tables` (for the saved
+    questions virtual DB). Prefer using `include` and `saved` instead. 
 
 ##### PARAMS:
 
@@ -859,24 +983,32 @@ Fetch all `Databases`. `include_tables` means we should hydrate the Tables belon
 
 *  **`include_cards`** value may be nil, or if non-nil, value must be a valid boolean string ('true' or 'false').
 
+*  **`include`** include must be either empty or the value tables
+
+*  **`saved`** value may be nil, or if non-nil, value must be a valid boolean string ('true' or 'false').
+
 
 ## `GET /api/database/:id`
 
-Get `Database` with ID.
+Get a single Database with `id`. Optionally pass `?include=tables` or `?include=tables.fields` to include the Tables
+  belonging to this database, or the Tables and Fields, respectively.
 
 ##### PARAMS:
 
 *  **`id`** 
 
+*  **`include`** value may be nil, or if non-nil, value must be one of: `tables`, `tables.fields`.
+
 
 ## `GET /api/database/:id/autocomplete_suggestions`
 
-Return a list of autocomplete suggestions for a given PREFIX.
-   This is intened for use with the ACE Editor when the User is typing raw SQL.
-   Suggestions include matching `Tables` and `Fields` in this `Database`.
+Return a list of autocomplete suggestions for a given `prefix`.
 
-   Tables are returned in the format `[table_name "Table"]`;
-   Fields are returned in the format `[field_name "table_name base_type special_type"]`
+  This is intened for use with the ACE Editor when the User is typing raw SQL. Suggestions include matching `Tables`
+  and `Fields` in this `Database`.
+
+  Tables are returned in the format `[table_name "Table"]`;
+  Fields are returned in the format `[field_name "table_name base_type semantic_type"]`
 
 ##### PARAMS:
 
@@ -906,7 +1038,19 @@ Get a list of all primary key `Fields` for `Database`.
 ## `GET /api/database/:id/metadata`
 
 Get metadata about a `Database`, including all of its `Tables` and `Fields`.
+   By default only non-hidden tables and fields are returned. Passing include_hidden=true includes them.
    Returns DB, fields, and field values.
+
+##### PARAMS:
+
+*  **`id`** 
+
+*  **`include_hidden`** value may be nil, or if non-nil, value must be a valid boolean string ('true' or 'false').
+
+
+## `GET /api/database/:id/schema/`
+
+Return a list of Tables for a Database whose `schema` is `nil` or an empty string.
 
 ##### PARAMS:
 
@@ -915,7 +1059,7 @@ Get metadata about a `Database`, including all of its `Tables` and `Fields`.
 
 ## `GET /api/database/:id/schema/:schema`
 
-Returns a list of tables for the given database `id` and `schema`
+Returns a list of Tables for the given Database `id` and `schema`
 
 ##### PARAMS:
 
@@ -939,6 +1083,20 @@ Endpoint that provides metadata for the Saved Questions 'virtual' database. Used
    and allowing it to treat the Saved Questions virtual DB just like any other database.
 
 
+## `GET /api/database/:virtual-db/schema/:schema`
+
+Returns a list of Tables for the saved questions virtual database.
+
+##### PARAMS:
+
+*  **`schema`** 
+
+
+## `GET /api/database/:virtual-db/schemas`
+
+Returns a list of all the schemas found for the saved questions virtual database.
+
+
 ## `POST /api/database/`
 
 Add a new `Database`.
@@ -958,6 +1116,8 @@ You must be a superuser to do this.
 *  **`is_on_demand`** value may be nil, or if non-nil, value must be a boolean.
 
 *  **`schedules`** value may be nil, or if non-nil, value must be a valid map of schedule maps for a DB.
+
+*  **`auto_run_queries`** value may be nil, or if non-nil, value must be a boolean.
 
 
 ## `POST /api/database/:id/discard_values`
@@ -1034,9 +1194,13 @@ You must be a superuser to do this.
 
 *  **`schedules`** value may be nil, or if non-nil, value must be a valid map of schedule maps for a DB.
 
+*  **`refingerprint`** value may be nil, or if non-nil, value must be a boolean.
+
 *  **`points_of_interest`** value may be nil, or if non-nil, value must be a string.
 
 *  **`description`** value may be nil, or if non-nil, value must be a string.
+
+*  **`auto_run_queries`** value may be nil, or if non-nil, value must be a boolean.
 
 *  **`name`** value may be nil, or if non-nil, value must be a non-blank string.
 
@@ -1057,7 +1221,9 @@ Execute a query and retrieve the results in the usual format.
 
 ##### PARAMS:
 
-*  **`database`** value must be an integer.
+*  **`database`** value may be nil, or if non-nil, value must be an integer.
+
+*  **`query-type`** 
 
 *  **`query`** 
 
@@ -1068,13 +1234,9 @@ Execute a query and download the result data as a file in the specified format.
 
 ##### PARAMS:
 
-*  **`export-format`** value must be one of: `csv`, `json`, `xlsx`.
+*  **`export-format`** value must be one of: `api`, `csv`, `json`, `xlsx`.
 
 *  **`query`** value must be a valid JSON string.
-
-*  **`respond`** 
-
-*  **`raise`** 
 
 
 ## `POST /api/dataset/duration`
@@ -1084,6 +1246,28 @@ Get historical query execution duration.
 ##### PARAMS:
 
 *  **`database`** 
+
+*  **`query`** 
+
+
+## `POST /api/dataset/native`
+
+Fetch a native version of an MBQL query.
+
+##### PARAMS:
+
+*  **`query`** 
+
+
+## `POST /api/dataset/pivot`
+
+Generate a pivoted dataset for an ad-hoc query
+
+##### PARAMS:
+
+*  **`database`** value may be nil, or if non-nil, value must be an integer.
+
+*  **`query-type`** 
 
 *  **`query`** 
 
@@ -1196,13 +1380,9 @@ Like `GET /api/embed/card/query`, but returns the results as a file in the speci
 
 *  **`token`** 
 
-*  **`export-format`** value must be one of: `csv`, `json`, `xlsx`.
+*  **`export-format`** value must be one of: `api`, `csv`, `json`, `xlsx`.
 
 *  **`query-params`** 
-
-*  **`respond`** 
-
-*  **`raise`** 
 
 
 ## `GET /api/embed/dashboard/:token`
@@ -1245,17 +1425,13 @@ Fetch the results of running a Card belonging to a Dashboard using a JSON Web To
 
 *  **`token`** 
 
-*  **`export-format`** value must be one of: `csv`, `json`, `xlsx`.
+*  **`export-format`** value must be one of: `api`, `csv`, `json`, `xlsx`.
 
 *  **`dashcard-id`** 
 
 *  **`card-id`** 
 
 *  **`query-params`** 
-
-*  **`respond`** 
-
-*  **`raise`** 
 
 
 ## `GET /api/embed/dashboard/:token/field/:field-id/remapping/:remapped-id`
@@ -1300,6 +1476,70 @@ Fetch FieldValues for a Field that is used as a param in an embedded Dashboard.
 *  **`token`** 
 
 *  **`field-id`** 
+
+
+## `GET /api/embed/dashboard/:token/params/:param-key/search/:prefix`
+
+Embedded version of chain filter search endpoint.
+
+##### PARAMS:
+
+*  **`token`** 
+
+*  **`param-key`** 
+
+*  **`prefix`** 
+
+*  **`query-params`** 
+
+
+## `GET /api/embed/dashboard/:token/params/:param-key/values`
+
+Embedded version of chain filter values endpoint.
+
+##### PARAMS:
+
+*  **`token`** 
+
+*  **`param-key`** 
+
+*  **`query-params`** 
+
+
+## `GET /api/embed/pivot/card/:token/query`
+
+Fetch the results of running a Card using a JSON Web Token signed with the `embedding-secret-key`.
+
+   Token should have the following format:
+
+     {:resource {:question <card-id>}
+      :params   <parameters>}
+
+##### PARAMS:
+
+*  **`token`** 
+
+*  **`&`** 
+
+*  **`query-params`** 
+
+
+## `GET /api/embed/pivot/dashboard/:token/dashcard/:dashcard-id/card/:card-id`
+
+Fetch the results of running a Card belonging to a Dashboard using a JSON Web Token signed with the
+  `embedding-secret-key`
+
+##### PARAMS:
+
+*  **`token`** 
+
+*  **`dashcard-id`** 
+
+*  **`card-id`** 
+
+*  **`&`** 
+
+*  **`query-params`** 
 
 
 ## `DELETE /api/field/:id/dimension`
@@ -1377,7 +1617,7 @@ If a Field's value of `has_field_values` is `list`, return a list of all the dis
 *  **`id`** 
 
 
-## `GET /api/field/field-literal%2C:field-name%2Ctype%2F:field-type/values`
+## `GET /api/field/field%2C:field-name%2C:options/values`
 
 Implementation of the field values endpoint for fields in the Saved Questions 'virtual' DB. This endpoint is just a
   convenience to simplify the frontend code. It just returns the standard 'empty' field values response.
@@ -1428,7 +1668,7 @@ You must be a superuser to do this.
 
 ## `POST /api/field/:id/values`
 
-Update the fields values and human-readable values for a `Field` whose special type is
+Update the fields values and human-readable values for a `Field` whose semantic type is
   `category`/`city`/`state`/`country` or whose base type is `type/Boolean`. The human-readable values are optional.
 
 ##### PARAMS:
@@ -1452,7 +1692,9 @@ Update `Field` with ID.
 
 *  **`description`** value may be nil, or if non-nil, value must be a non-blank string.
 
-*  **`special_type`** value may be nil, or if non-nil, value must be a valid field type.
+*  **`semantic_type`** value may be nil, or if non-nil, value must be a valid field type.
+
+*  **`coercion_strategy`** value may be nil, or if non-nil, value must be a valid coercion type.
 
 *  **`has_field_values`** value may be nil, or if non-nil, value must be one of: `auto-list`, `list`, `none`, `search`.
 
@@ -1468,11 +1710,15 @@ Update `Field` with ID.
 ## `GET /api/geojson/:key`
 
 Fetch a custom GeoJSON file as defined in the `custom-geojson` setting. (This just acts as a simple proxy for the
-  file specified for KEY).
+  file specified for `key`).
 
 ##### PARAMS:
 
 *  **`key`** value must be a non-blank string.
+
+*  **`respond`** 
+
+*  **`raise`** 
 
 
 ## `PUT /api/ldap/settings`
@@ -1484,6 +1730,12 @@ You must be a superuser to do this.
 ##### PARAMS:
 
 *  **`settings`** value must be a map.
+
+
+## `GET /api/metastore/token/status`
+
+Fetch info about the current MetaStore premium features token including whether it is `valid`, a `trial` token, its
+  `features`, and when it is `valid_thru`.
 
 
 ## `DELETE /api/metric/:id`
@@ -1600,18 +1852,76 @@ You must be a superuser to do this.
 *  **`important_field_ids`** value must be an array. Each value must be an integer greater than zero.
 
 
-## `POST /api/notify/db/:id`
+## `GET /api/native-query-snippet/`
 
-Notification about a potential schema change to one of our `Databases`.
-  Caller can optionally specify a `:table_id` or `:table_name` in the body to limit updates to a single `Table`.
+Fetch all snippets
+
+##### PARAMS:
+
+*  **`archived`** value may be nil, or if non-nil, value must be a valid boolean string ('true' or 'false').
+
+
+## `GET /api/native-query-snippet/:id`
+
+Fetch native query snippet with ID.
 
 ##### PARAMS:
 
 *  **`id`** 
 
-*  **`table_id`** 
 
-*  **`table_name`** 
+## `POST /api/native-query-snippet/`
+
+Create a new `NativeQuerySnippet`.
+
+##### PARAMS:
+
+*  **`content`** value must be a string.
+
+*  **`description`** value may be nil, or if non-nil, value must be a string.
+
+*  **`name`** snippet names cannot include } or start with spaces
+
+*  **`collection_id`** value may be nil, or if non-nil, value must be an integer greater than zero.
+
+
+## `PUT /api/native-query-snippet/:id`
+
+Update an existing `NativeQuerySnippet`.
+
+##### PARAMS:
+
+*  **`id`** 
+
+*  **`archived`** value may be nil, or if non-nil, value must be a boolean.
+
+*  **`content`** value may be nil, or if non-nil, value must be a string.
+
+*  **`description`** value may be nil, or if non-nil, value must be a string.
+
+*  **`name`** value may be nil, or if non-nil, snippet names cannot include } or start with spaces
+
+*  **`collection_id`** value may be nil, or if non-nil, value must be an integer greater than zero.
+
+
+## `POST /api/notify/db/:id`
+
+Notification about a potential schema change to one of our `Databases`.
+  Caller can optionally specify a `:table_id` or `:table_name` in the body to limit updates to a single
+  `Table`. Optional Parameter `:scan` can be `"full" or "schema" for a full sync or a schema sync, available
+  regardless if a `:table_id` or `:table_name` is passed.
+  This endpoint is secured by an API key that needs to be passed as a `X-METABASE-APIKEY` header which needs to be defined in 
+  the `MB_API_KEY` [environment variable](https://www.metabase.com/docs/latest/operations-guide/environment-variables.html#mb_api_key)
+
+##### PARAMS:
+
+*  **`id`** 
+
+*  **`table_id`** value may be nil, or if non-nil, value must be an integer greater than zero.
+
+*  **`table_name`** value may be nil, or if non-nil, value must be a non-blank string.
+
+*  **`scan`** value may be nil, or if non-nil, value must be one of: `full`, `schema`.
 
 
 ## `DELETE /api/permissions/group/:group-id`
@@ -1729,7 +2039,7 @@ You must be a superuser to do this.
 
 ## `GET /api/preview-embed/card/:token`
 
-Fetch a Card you're considering embedding by passing a JWT TOKEN.
+Fetch a Card you're considering embedding by passing a JWT `token`.
 
 ##### PARAMS:
 
@@ -1738,7 +2048,7 @@ Fetch a Card you're considering embedding by passing a JWT TOKEN.
 
 ## `GET /api/preview-embed/card/:token/query`
 
-Fetch the query results for a Card you're considering embedding by passing a JWT TOKEN.
+Fetch the query results for a Card you're considering embedding by passing a JWT `token`.
 
 ##### PARAMS:
 
@@ -1751,7 +2061,7 @@ Fetch the query results for a Card you're considering embedding by passing a JWT
 
 ## `GET /api/preview-embed/dashboard/:token`
 
-Fetch a Dashboard you're considering embedding by passing a JWT TOKEN. 
+Fetch a Dashboard you're considering embedding by passing a JWT `token`. 
 
 ##### PARAMS:
 
@@ -1760,7 +2070,37 @@ Fetch a Dashboard you're considering embedding by passing a JWT TOKEN.
 
 ## `GET /api/preview-embed/dashboard/:token/dashcard/:dashcard-id/card/:card-id`
 
-Fetch the results of running a Card belonging to a Dashboard you're considering embedding with JWT TOKEN.
+Fetch the results of running a Card belonging to a Dashboard you're considering embedding with JWT `token`.
+
+##### PARAMS:
+
+*  **`token`** 
+
+*  **`dashcard-id`** 
+
+*  **`card-id`** 
+
+*  **`&`** 
+
+*  **`query-params`** 
+
+
+## `GET /api/preview-embed/pivot/card/:token/query`
+
+Fetch the query results for a Card you're considering embedding by passing a JWT `token`.
+
+##### PARAMS:
+
+*  **`token`** 
+
+*  **`&`** 
+
+*  **`query-params`** 
+
+
+## `GET /api/preview-embed/pivot/dashboard/:token/dashcard/:dashcard-id/card/:card-id`
+
+Fetch the results of running a Card belonging to a Dashboard you're considering embedding with JWT `token`.
 
 ##### PARAMS:
 
@@ -1850,13 +2190,9 @@ Fetch a publicly-accessible Card and return query results in the specified forma
 
 *  **`uuid`** 
 
-*  **`export-format`** value must be one of: `csv`, `json`, `xlsx`.
+*  **`export-format`** value must be one of: `api`, `csv`, `json`, `xlsx`.
 
 *  **`parameters`** value may be nil, or if non-nil, value must be a valid JSON string.
-
-*  **`respond`** 
-
-*  **`raise`** 
 
 
 ## `GET /api/public/dashboard/:uuid`
@@ -1926,6 +2262,34 @@ Fetch FieldValues for a Field that is referenced by a Card in a public Dashboard
 *  **`field-id`** 
 
 
+## `GET /api/public/dashboard/:uuid/params/:param-key/search/:query`
+
+Fetch filter values for dashboard parameter `param-key`, containing specified `query`.
+
+##### PARAMS:
+
+*  **`uuid`** 
+
+*  **`param-key`** 
+
+*  **`query`** 
+
+*  **`query-params`** 
+
+
+## `GET /api/public/dashboard/:uuid/params/:param-key/values`
+
+Fetch filter values for dashboard parameter `param-key`.
+
+##### PARAMS:
+
+*  **`uuid`** 
+
+*  **`param-key`** 
+
+*  **`query-params`** 
+
+
 ## `GET /api/public/oembed`
 
 oEmbed endpoint used to retreive embed code and metadata for a (public) Metabase URL.
@@ -1941,9 +2305,44 @@ oEmbed endpoint used to retreive embed code and metadata for a (public) Metabase
 *  **`maxwidth`** value may be nil, or if non-nil, value must be a valid integer.
 
 
+## `GET /api/public/pivot/card/:uuid/query`
+
+Fetch a publicly-accessible Card an return query results as well as `:card` information. Does not require auth
+   credentials. Public sharing must be enabled.
+
+##### PARAMS:
+
+*  **`uuid`** 
+
+*  **`parameters`** value may be nil, or if non-nil, value must be a valid JSON string.
+
+
+## `GET /api/public/pivot/dashboard/:uuid/card/:card-id`
+
+Fetch the results for a Card in a publicly-accessible Dashboard. Does not require auth credentials. Public
+   sharing must be enabled.
+
+##### PARAMS:
+
+*  **`uuid`** 
+
+*  **`card-id`** 
+
+*  **`parameters`** value may be nil, or if non-nil, value must be a valid JSON string.
+
+
 ## `DELETE /api/pulse/:id`
 
 Delete a Pulse. (DEPRECATED -- don't delete a Pulse anymore -- archive it instead.)
+
+##### PARAMS:
+
+*  **`id`** 
+
+
+## `DELETE /api/pulse/:id/subscription/email`
+
+For users to unsubscribe themselves from a pulse subscription.
 
 ##### PARAMS:
 
@@ -1957,6 +2356,8 @@ Fetch all Pulses
 ##### PARAMS:
 
 *  **`archived`** value may be nil, or if non-nil, value must be a valid boolean string ('true' or 'false').
+
+*  **`dashboard_id`** value may be nil, or if non-nil, value must be an integer greater than zero.
 
 
 ## `GET /api/pulse/:id`
@@ -2008,7 +2409,7 @@ Create a new `Pulse`.
 
 *  **`name`** value must be a non-blank string.
 
-*  **`cards`** value must be an array. Each value must satisfy one of the following requirements: 1) value must be a map with the following keys `(collection_id, description, display, id, include_csv, include_xls, name)` 2) value must be a map with the keys `id`, `include_csv`, and `include_xls`. The array cannot be empty.
+*  **`cards`** value must be an array. Each value must satisfy one of the following requirements: 1) value must be a map with the following keys `(collection_id, description, display, id, include_csv, include_xls, name, dashboard_id, parameter_mappings)` 2) value must be a map with the keys `id`, `include_csv`, `include_xls`, and `dashboard_card_id`. The array cannot be empty.
 
 *  **`channels`** value must be an array. Each value must be a map. The array cannot be empty.
 
@@ -2017,6 +2418,8 @@ Create a new `Pulse`.
 *  **`collection_id`** value may be nil, or if non-nil, value must be an integer greater than zero.
 
 *  **`collection_position`** value may be nil, or if non-nil, value must be an integer greater than zero.
+
+*  **`dashboard_id`** value may be nil, or if non-nil, value must be an integer greater than zero.
 
 
 ## `POST /api/pulse/test`
@@ -2027,7 +2430,7 @@ Test send an unsaved pulse.
 
 *  **`name`** value must be a non-blank string.
 
-*  **`cards`** value must be an array. Each value must satisfy one of the following requirements: 1) value must be a map with the following keys `(collection_id, description, display, id, include_csv, include_xls, name)` 2) value must be a map with the keys `id`, `include_csv`, and `include_xls`. The array cannot be empty.
+*  **`cards`** value must be an array. Each value must satisfy one of the following requirements: 1) value must be a map with the following keys `(collection_id, description, display, id, include_csv, include_xls, name, dashboard_id, parameter_mappings)` 2) value must be a map with the keys `id`, `include_csv`, `include_xls`, and `dashboard_card_id`. The array cannot be empty.
 
 *  **`channels`** value must be an array. Each value must be a map. The array cannot be empty.
 
@@ -2036,6 +2439,8 @@ Test send an unsaved pulse.
 *  **`collection_id`** value may be nil, or if non-nil, value must be an integer greater than zero.
 
 *  **`collection_position`** value may be nil, or if non-nil, value must be an integer greater than zero.
+
+*  **`dashboard_id`** value may be nil, or if non-nil, value must be an integer greater than zero.
 
 
 ## `PUT /api/pulse/:id`
@@ -2048,7 +2453,7 @@ Update a Pulse with `id`.
 
 *  **`name`** value may be nil, or if non-nil, value must be a non-blank string.
 
-*  **`cards`** value may be nil, or if non-nil, value must be an array. Each value must satisfy one of the following requirements: 1) value must be a map with the following keys `(collection_id, description, display, id, include_csv, include_xls, name)` 2) value must be a map with the keys `id`, `include_csv`, and `include_xls`. The array cannot be empty.
+*  **`cards`** value may be nil, or if non-nil, value must be an array. Each value must satisfy one of the following requirements: 1) value must be a map with the following keys `(collection_id, description, display, id, include_csv, include_xls, name, dashboard_id, parameter_mappings)` 2) value must be a map with the keys `id`, `include_csv`, `include_xls`, and `dashboard_card_id`. The array cannot be empty.
 
 *  **`channels`** value may be nil, or if non-nil, value must be an array. Each value must be a map. The array cannot be empty.
 
@@ -2223,8 +2628,6 @@ Login.
 
 *  **`password`** value must be a non-blank string.
 
-*  **`remote-address`** 
-
 *  **`request`** 
 
 
@@ -2238,7 +2641,7 @@ Send a reset email when user has forgotten their password.
 
 *  **`email`** value must be a valid email address.
 
-*  **`remote-address`** 
+*  **`request`** 
 
 
 ## `POST /api/session/google_auth`
@@ -2248,8 +2651,6 @@ Login with Google Auth.
 ##### PARAMS:
 
 *  **`token`** value must be a non-blank string.
-
-*  **`remote-address`** 
 
 *  **`request`** 
 
@@ -2319,8 +2720,8 @@ You must be a superuser to do this.
 
 ## `POST /api/setup/`
 
-Special endpoint for creating the first user during setup.
-   This endpoint both creates the user AND logs them in and returns a session ID.
+Special endpoint for creating the first user during setup. This endpoint both creates the user AND logs them in and
+  returns a session ID.
 
 ##### PARAMS:
 
@@ -2330,11 +2731,15 @@ Special endpoint for creating the first user during setup.
 
 *  **`allow_tracking`** value may be nil, or if non-nil, value must satisfy one of the following requirements: 1) value must be a boolean. 2) value must be a valid boolean string ('true' or 'false').
 
+*  **`site_locale`** value may be nil, or if non-nil, String must be a valid two-letter ISO language or language-country code e.g. en or en_US.
+
 *  **`email`** value must be a valid email address.
 
 *  **`first_name`** value must be a non-blank string.
 
 *  **`request`** 
+
+*  **`auto_run_queries`** value may be nil, or if non-nil, value must be a boolean.
 
 *  **`password`** Insufficient password strength
 
@@ -2349,6 +2754,8 @@ Special endpoint for creating the first user during setup.
 *  **`details`** 
 
 *  **`is_on_demand`** 
+
+*  **`database`** 
 
 *  **`last_name`** value must be a non-blank string.
 
@@ -2409,14 +2816,18 @@ Get all foreign keys whose destination is a `Field` that belongs to this `Table`
 Get metadata about a `Table` useful for running queries.
    Returns DB, fields, field FKs, and field values.
 
-  By passing `include_sensitive_fields=true`, information *about* sensitive `Fields` will be returned; in no case will
-  any of its corresponding values be returned. (This option is provided for use in the Admin Edit Metadata page).
+  Passing `include_hidden_fields=true` will include any hidden `Fields` in the response. Defaults to `false`
+  Passing `include_sensitive_fields=true` will include any sensitive `Fields` in the response. Defaults to `false`.
+
+  These options are provided for use in the Admin Edit Metadata page.
 
 ##### PARAMS:
 
 *  **`id`** 
 
 *  **`include_sensitive_fields`** value may be nil, or if non-nil, value must be a valid boolean string ('true' or 'false').
+
+*  **`include_hidden_fields`** value may be nil, or if non-nil, value must be a valid boolean string ('true' or 'false').
 
 
 ## `GET /api/table/:id/related`
@@ -2467,13 +2878,13 @@ You must be a superuser to do this.
 *  **`id`** 
 
 
-## `PUT /api/table/:id`
+## `PUT /api/table/`
 
-Update `Table` with ID.
+Update all `Table` in `ids`.
 
 ##### PARAMS:
 
-*  **`id`** 
+*  **`ids`** value must be an array. Each value must be an integer greater than zero. The array cannot be empty.
 
 *  **`display_name`** value may be nil, or if non-nil, value must be a non-blank string.
 
@@ -2488,6 +2899,44 @@ Update `Table` with ID.
 *  **`points_of_interest`** value may be nil, or if non-nil, value must be a non-blank string.
 
 *  **`show_in_getting_started`** value may be nil, or if non-nil, value must be a boolean.
+
+
+## `PUT /api/table/:id`
+
+Update `Table` with ID.
+
+##### PARAMS:
+
+*  **`visibility_type`** value may be nil, or if non-nil, value must be one of: `cruft`, `hidden`, `technical`.
+
+*  **`field_order`** value may be nil, or if non-nil, value must be one of: `alphabetical`, `custom`, `database`, `smart`.
+
+*  **`display_name`** value may be nil, or if non-nil, value must be a non-blank string.
+
+*  **`points_of_interest`** value may be nil, or if non-nil, value must be a non-blank string.
+
+*  **`entity_type`** value may be nil, or if non-nil, value must be a valid entity type (keyword or string).
+
+*  **`description`** value may be nil, or if non-nil, value must be a non-blank string.
+
+*  **`show_in_getting_started`** value may be nil, or if non-nil, value must be a boolean.
+
+*  **`caveats`** value may be nil, or if non-nil, value must be a non-blank string.
+
+*  **`id`** 
+
+
+## `PUT /api/table/:id/fields/order`
+
+Reorder fields
+
+You must be a superuser to do this.
+
+##### PARAMS:
+
+*  **`id`** 
+
+*  **`field_order`** value must be an array. Each value must be an integer greater than zero.
 
 
 ## `GET /api/task/`
@@ -2521,7 +2970,7 @@ You must be a superuser to do this.
 
 ## `GET /api/tiles/:zoom/:x/:y/:lat-field-id/:lon-field-id/:lat-col-idx/:lon-col-idx/`
 
-This endpoints provides an image with the appropriate pins rendered given a MBQL QUERY (passed as a GET query
+This endpoints provides an image with the appropriate pins rendered given a MBQL `query` (passed as a GET query
   string param). We evaluate the query and find the set of lat/lon pairs which are relevant and then render the
   appropriate ones. It's expected that to render a full map view several calls will be made to this endpoint in
   parallel.
@@ -2545,6 +2994,19 @@ This endpoints provides an image with the appropriate pins rendered given a MBQL
 *  **`query`** value must be a valid JSON string.
 
 
+## `GET /api/transform/:db-id/:schema/:transform-name`
+
+Look up a database schema transform
+
+##### PARAMS:
+
+*  **`db-id`** 
+
+*  **`schema`** 
+
+*  **`transform-name`** 
+
+
 ## `DELETE /api/user/:id`
 
 Disable a `User`.  This does not remove the `User` from the DB, but instead disables their account.
@@ -2560,7 +3022,7 @@ You must be a superuser to do this.
 
 Fetch a list of `Users` for the admin People page or for Pulses. By default returns only active users. If
   `include_deactivated` is true, return all Users (active and inactive). (Using `include_deactivated` requires
-  superuser permissions.)
+  superuser permissions.). For users with segmented permissions, return only themselves.
 
 ##### PARAMS:
 
@@ -2599,7 +3061,7 @@ You must be a superuser to do this.
 
 *  **`group_ids`** value may be nil, or if non-nil, value must be an array. Each value must be an integer greater than zero.
 
-*  **`login_attributes`** value may be nil, or if non-nil, value must be a map with each value either a string or number.
+*  **`login_attributes`** value may be nil, or if non-nil, login attribute keys must be a keyword or string
 
 
 ## `POST /api/user/:id/send_invite`
@@ -2631,7 +3093,9 @@ Update an existing, active `User`.
 
 *  **`is_superuser`** value may be nil, or if non-nil, value must be a boolean.
 
-*  **`login_attributes`** value may be nil, or if non-nil, value must be a map with each value either a string or number.
+*  **`login_attributes`** value may be nil, or if non-nil, login attribute keys must be a keyword or string
+
+*  **`locale`** value may be nil, or if non-nil, String must be a valid two-letter ISO language or language-country code e.g. en or en_US.
 
 
 ## `PUT /api/user/:id/password`
@@ -2665,6 +3129,13 @@ You must be a superuser to do this.
 ##### PARAMS:
 
 *  **`id`** 
+
+
+## `GET /api/util/bug_report_details`
+
+Returns version and system information relevant to filing a bug report against Metabase.
+
+You must be a superuser to do this.
 
 
 ## `GET /api/util/logs`

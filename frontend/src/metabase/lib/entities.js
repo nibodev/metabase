@@ -1,5 +1,3 @@
-/* @flow */
-
 import {
   combineReducers,
   handleEntities,
@@ -64,6 +62,9 @@ type EntityDefinition = {
     [name: string]: ActionCreator,
   },
   selectors?: {
+    [name: string]: Function,
+  },
+  createSelectors?: ({ [name: string]: Function }) => {
     [name: string]: Function,
   },
   objectActions?: {
@@ -407,6 +408,9 @@ export function createEntity(def: EntityDefinition): Entity {
       // contains the actual entries, if that is on the response we should
       // use that as the 'results'
       const results = fetched.data ? fetched.data : fetched;
+      if (!Array.isArray(results)) {
+        throw `Invalid response listing ${entity.name}`;
+      }
       return {
         ...entity.normalizeList(results),
         entityQuery,
@@ -485,9 +489,9 @@ export function createEntity(def: EntityDefinition): Entity {
     // delegate to getObject
     (state, entityIds) =>
       entityIds &&
-      entityIds.map(entityId =>
-        entity.selectors.getObject(state, { entityId }),
-      ),
+      entityIds
+        .map(entityId => entity.selectors.getObject(state, { entityId }))
+        .filter(e => e != null), // deleted entities might remain in lists
   );
 
   // REQUEST STATE SELECTORS
@@ -527,14 +531,18 @@ export function createEntity(def: EntityDefinition): Entity {
     requestState => requestState.error,
   );
 
-  entity.selectors = {
+  const defaultSelectors = {
     getList,
     getObject,
     getFetched,
     getLoading,
     getLoaded,
     getError,
+  };
+  entity.selectors = {
+    ...defaultSelectors,
     ...(def.selectors || {}),
+    ...(def.createSelectors ? def.createSelectors(defaultSelectors) : {}),
   };
 
   entity.objectSelectors = {
@@ -546,6 +554,9 @@ export function createEntity(def: EntityDefinition): Entity {
     },
     getColor(object) {
       return undefined;
+    },
+    getCollection(object) {
+      return object.collection;
     },
     ...(def.objectSelectors || {}),
   };

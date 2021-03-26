@@ -25,6 +25,7 @@ const STATE = {
   },
   entities: {
     databases: {},
+    schemas: {},
     tables: {},
     fields: {
       1: { id: 1 },
@@ -49,6 +50,7 @@ describe("dashboard/selectors", () => {
           id: 1,
           field_ids: [],
           field_id: null,
+          hasOnlyFieldTargets: true,
         },
       ]);
     });
@@ -66,6 +68,7 @@ describe("dashboard/selectors", () => {
           id: 1,
           field_ids: [],
           field_id: null,
+          hasOnlyFieldTargets: false,
         },
       ]);
     });
@@ -75,7 +78,7 @@ describe("dashboard/selectors", () => {
         .assocIn(["dashboard", "dashcards", 0, "parameter_mappings", 0], {
           card_id: 0,
           parameter_id: 1,
-          target: ["dimension", ["field-id", 1]],
+          target: ["dimension", ["field", 1, null]],
         })
         .value();
       expect(getParameters(state)).toEqual([
@@ -83,6 +86,7 @@ describe("dashboard/selectors", () => {
           id: 1,
           field_ids: [1],
           field_id: 1,
+          hasOnlyFieldTargets: true,
         },
       ]);
     });
@@ -92,12 +96,12 @@ describe("dashboard/selectors", () => {
         .assocIn(["dashboard", "dashcards", 0, "parameter_mappings", 0], {
           card_id: 0,
           parameter_id: 1,
-          target: ["dimension", ["field-id", 1]],
+          target: ["dimension", ["field", 1, null]],
         })
         .assocIn(["dashboard", "dashcards", 1, "parameter_mappings", 0], {
           card_id: 1,
           parameter_id: 1,
-          target: ["dimension", ["field-id", 1]],
+          target: ["dimension", ["field", 1, null]],
         })
         .value();
       expect(getParameters(state)).toEqual([
@@ -105,6 +109,7 @@ describe("dashboard/selectors", () => {
           id: 1,
           field_ids: [1],
           field_id: 1,
+          hasOnlyFieldTargets: true,
         },
       ]);
     });
@@ -114,7 +119,7 @@ describe("dashboard/selectors", () => {
         .assocIn(["dashboard", "dashcards", 0, "parameter_mappings", 0], {
           card_id: 0,
           parameter_id: 1,
-          target: ["dimension", ["field-id", 1]],
+          target: ["dimension", ["field", 1, null]],
         })
         .assocIn(["dashboard", "dashcards", 1, "parameter_mappings", 0], {
           card_id: 1,
@@ -127,6 +132,7 @@ describe("dashboard/selectors", () => {
           id: 1,
           field_ids: [1],
           field_id: 1,
+          hasOnlyFieldTargets: false,
         },
       ]);
     });
@@ -136,12 +142,12 @@ describe("dashboard/selectors", () => {
         .assocIn(["dashboard", "dashcards", 0, "parameter_mappings", 0], {
           card_id: 0,
           parameter_id: 1,
-          target: ["dimension", ["field-id", 1]],
+          target: ["dimension", ["field", 1, null]],
         })
         .assocIn(["dashboard", "dashcards", 1, "parameter_mappings", 0], {
           card_id: 1,
           parameter_id: 1,
-          target: ["dimension", ["field-id", 2]],
+          target: ["dimension", ["field", 2, null]],
         })
         .value();
       expect(getParameters(state)).toEqual([
@@ -149,6 +155,7 @@ describe("dashboard/selectors", () => {
           id: 1,
           field_ids: [1, 2],
           field_id: null,
+          hasOnlyFieldTargets: true,
         },
       ]);
     });

@@ -13,7 +13,6 @@ import DateRelativeWidget from "./widgets/DateRelativeWidget";
 import DateMonthYearWidget from "./widgets/DateMonthYearWidget";
 import DateQuarterYearWidget from "./widgets/DateQuarterYearWidget";
 import DateAllOptionsWidget from "./widgets/DateAllOptionsWidget";
-import CategoryWidget from "./widgets/CategoryWidget";
 import TextWidget from "./widgets/TextWidget";
 import ParameterFieldWidget from "./widgets/ParameterFieldWidget";
 
@@ -70,6 +69,8 @@ export default class ParameterValueWidget extends Component {
     focusChanged: PropTypes.func,
     isFullscreen: PropTypes.bool,
     className: PropTypes.string,
+    parameters: PropTypes.array,
+    dashboard: PropTypes.object,
 
     // provided by @connect
     values: PropTypes.array,
@@ -84,30 +85,11 @@ export default class ParameterValueWidget extends Component {
     className: "",
   };
 
-  // this method assumes the parameter is associated with only one field
-  getSingleField() {
-    const { parameter, metadata } = this.props;
-    return parameter.field_id != null
-      ? metadata.fields[parameter.field_id]
-      : null;
-  }
-
-  getWidget() {
-    const { parameter, values } = this.props;
-    if (DATE_WIDGETS[parameter.type]) {
-      return DATE_WIDGETS[parameter.type];
-    } else if (this.getSingleField()) {
-      return ParameterFieldWidget;
-    } else if (values && values.length > 0) {
-      return CategoryWidget;
-    } else {
-      return TextWidget;
-    }
-  }
-
   state = { isFocused: false };
 
-  componentWillMount() {
+  constructor(props) {
+    super(props);
+
     // In public dashboards we receive field values before mounting this component and
     // without need to call `fetchFieldValues` separately
     if (_.isEmpty(this.props.values)) {
@@ -115,25 +97,45 @@ export default class ParameterValueWidget extends Component {
     }
   }
 
-  fieldIds({ parameter: { field_id, field_ids = [] } }) {
-    return field_id ? [field_id] : field_ids;
-  }
-
-  componentWillReceiveProps(nextProps) {
-    if (!_.isEqual(this.fieldIds(this.props), this.fieldIds(nextProps))) {
-      this.updateFieldValues(nextProps);
+  componentDidUpdate(prevProps) {
+    if (
+      !_.isEqual(
+        getFieldIds(prevProps.parameter),
+        getFieldIds(this.props.parameter),
+      )
+    ) {
+      this.updateFieldValues(this.props);
     }
   }
 
   updateFieldValues(props) {
-    for (const id of this.fieldIds(props)) {
+    for (const id of getFieldIds(props.parameter)) {
       props.fetchField(id);
       props.fetchFieldValues(id);
     }
   }
 
+  onFocusChanged = isFocused => {
+    const { focusChanged: parentFocusChanged } = this.props;
+    if (parentFocusChanged) {
+      parentFocusChanged(isFocused);
+    }
+    this.setState({ isFocused });
+  };
+
+  onPopoverClose = () => {
+    if (this.refs.valuePopover) {
+      this.refs.valuePopover.close();
+    }
+  };
+
+  getTargetRef = () => {
+    return this.refs.trigger;
+  };
+
   render() {
     const {
+      metadata,
       parameter,
       value,
       values,
@@ -142,83 +144,15 @@ export default class ParameterValueWidget extends Component {
       placeholder,
       isFullscreen,
       noReset,
-      commitImmediately,
       className,
-      focusChanged: parentFocusChanged,
     } = this.props;
-
+    const { isFocused } = this.state;
     const hasValue = value != null;
+    const WidgetDefinition = getWidgetDefinition(metadata, parameter);
+    const { noPopover } = WidgetDefinition;
+    const showTypeIcon = !isEditing && !hasValue && !isFocused;
 
-    const Widget = this.getWidget();
-
-    const focusChanged = isFocused => {
-      if (parentFocusChanged) {
-        parentFocusChanged(isFocused);
-      }
-      this.setState({ isFocused });
-    };
-
-    const getParameterTypeIcon = () => {
-      if (!isEditing && !hasValue && !this.state.isFocused) {
-        return (
-          <Icon
-            name={getParameterIconName(parameter.type)}
-            className="flex-align-left mr1 flex-no-shrink"
-            size={14}
-          />
-        );
-      } else {
-        return null;
-      }
-    };
-
-    const getWidgetStatusIcon = () => {
-      if (isFullscreen) {
-        return null;
-      }
-
-      if (hasValue && !noReset) {
-        return (
-          <Icon
-            name="close"
-            className="flex-align-right cursor-pointer flex-no-shrink"
-            size={12}
-            onClick={e => {
-              if (hasValue) {
-                e.stopPropagation();
-                setValue(null);
-              }
-            }}
-          />
-        );
-      } else if (Widget.noPopover && this.state.isFocused) {
-        return (
-          <Icon
-            name="enter_or_return"
-            className="flex-align-right flex-no-shrink"
-            size={12}
-          />
-        );
-      } else if (Widget.noPopover) {
-        return (
-          <Icon
-            name="empty"
-            className="flex-align-right cursor-pointer flex-no-shrink"
-            size={12}
-          />
-        );
-      } else if (!Widget.noPopover) {
-        return (
-          <Icon
-            name="chevrondown"
-            className="flex-align-right flex-no-shrink"
-            size={12}
-          />
-        );
-      }
-    };
-
-    if (Widget.noPopover) {
+    if (noPopover) {
       return (
         <div
           className={cx(S.parameter, S.noPopover, className, {
@@ -226,18 +160,20 @@ export default class ParameterValueWidget extends Component {
             [S.isEditing]: isEditing,
           })}
         >
-          {getParameterTypeIcon()}
+          {showTypeIcon && <ParameterTypeIcon parameter={parameter} />}
           <Widget
-            placeholder={placeholder}
-            value={value}
-            values={values}
-            field={this.getSingleField()}
-            setValue={setValue}
-            isEditing={isEditing}
-            commitImmediately={commitImmediately}
-            focusChanged={focusChanged}
+            {...this.props}
+            onFocusChanged={this.onFocusChanged}
+            onPopoverClose={this.onPopoverClose}
           />
-          {getWidgetStatusIcon()}
+          <WidgetStatusIcon
+            isFullscreen={isFullscreen}
+            hasValue={hasValue}
+            noReset={noReset}
+            noPopover={noPopover}
+            isFocused={isFocused}
+            setValue={setValue}
+          />
         </div>
       );
     } else {
@@ -253,25 +189,195 @@ export default class ParameterValueWidget extends Component {
               ref="trigger"
               className={cx(S.parameter, className, { [S.selected]: hasValue })}
             >
-              {getParameterTypeIcon()}
+              {showTypeIcon && <ParameterTypeIcon parameter={parameter} />}
               <div className="mr1 text-nowrap">
-                {hasValue ? Widget.format(value, values) : placeholderText}
+                {hasValue
+                  ? WidgetDefinition.format(value, values)
+                  : placeholderText}
               </div>
-              {getWidgetStatusIcon()}
+              <WidgetStatusIcon
+                isFullscreen={isFullscreen}
+                hasValue={hasValue}
+                noReset={noReset}
+                noPopover={noPopover}
+                isFocused={isFocused}
+                setValue={setValue}
+              />
             </div>
           }
-          target={() => this.refs.trigger} // not sure why this is necessary
+          target={this.getTargetRef}
           // make sure the full date picker will expand to fit the dual calendars
           autoWidth={parameter.type === "date/all-options"}
         >
           <Widget
-            value={value}
-            values={values}
-            setValue={setValue}
-            onClose={() => this.refs.valuePopover.close()}
+            {...this.props}
+            onFocusChanged={this.onFocusChanged}
+            onPopoverClose={this.onPopoverClose}
           />
         </PopoverWithTrigger>
       );
     }
   }
 }
+
+function getFields(metadata, parameter) {
+  if (!metadata) {
+    return [];
+  }
+  return getFieldIds(parameter)
+    .map(id => metadata.field(id))
+    .filter(f => f != null);
+}
+
+function getFieldIds(parameter) {
+  const { field_ids = [], field_id } = parameter;
+  return field_id ? [field_id] : field_ids;
+}
+
+function Widget({
+  parameter,
+  metadata,
+  value,
+  values,
+  setValue,
+  onPopoverClose,
+  className,
+  isEditing,
+  commitImmediately,
+  placeholder,
+  onFocusChanged,
+  parameters,
+  dashboard,
+}) {
+  const DateWidget = DATE_WIDGETS[parameter.type];
+  const fields = getFields(metadata, parameter);
+  if (DateWidget) {
+    return (
+      <DateWidget value={value} setValue={setValue} onClose={onPopoverClose} />
+    );
+  } else if (fields.length > 0 && parameter.hasOnlyFieldTargets) {
+    return (
+      <ParameterFieldWidget
+        parameter={parameter}
+        parameters={parameters}
+        dashboard={dashboard}
+        placeholder={placeholder}
+        value={value}
+        values={values}
+        fields={fields}
+        setValue={setValue}
+        isEditing={isEditing}
+        commitImmediately={commitImmediately}
+        focusChanged={onFocusChanged}
+      />
+    );
+  } else {
+    return (
+      <TextWidget
+        value={value}
+        setValue={setValue}
+        className={className}
+        isEditing={isEditing}
+        commitImmediately={commitImmediately}
+        placeholder={placeholder}
+        focusChanged={onFocusChanged}
+      />
+    );
+  }
+}
+Widget.propTypes = {
+  ...ParameterValueWidget.propTypes,
+  onPopoverClose: PropTypes.func.isRequired,
+  onFocusChanged: PropTypes.func.isRequired,
+};
+
+function getWidgetDefinition(metadata, parameter) {
+  if (DATE_WIDGETS[parameter.type]) {
+    return DATE_WIDGETS[parameter.type];
+  } else if (
+    getFields(metadata, parameter).length > 0 &&
+    parameter.hasOnlyFieldTargets
+  ) {
+    return ParameterFieldWidget;
+  } else {
+    return TextWidget;
+  }
+}
+
+function ParameterTypeIcon({ parameter }) {
+  return (
+    <Icon
+      name={getParameterIconName(parameter.type)}
+      className="flex-align-left mr1 flex-no-shrink"
+      size={14}
+    />
+  );
+}
+
+ParameterTypeIcon.propTypes = {
+  parameter: PropTypes.object.isRequired,
+};
+
+function WidgetStatusIcon({
+  isFullscreen,
+  hasValue,
+  noReset,
+  noPopover,
+  isFocused,
+  setValue,
+}) {
+  if (isFullscreen) {
+    return null;
+  }
+
+  if (hasValue && !noReset) {
+    return (
+      <Icon
+        name="close"
+        className="flex-align-right cursor-pointer flex-no-shrink"
+        size={12}
+        onClick={e => {
+          if (hasValue) {
+            e.stopPropagation();
+            setValue(null);
+          }
+        }}
+      />
+    );
+  } else if (noPopover && isFocused) {
+    return (
+      <Icon
+        name="enter_or_return"
+        className="flex-align-right flex-no-shrink"
+        size={12}
+      />
+    );
+  } else if (noPopover) {
+    return (
+      <Icon
+        name="empty"
+        className="flex-align-right cursor-pointer flex-no-shrink"
+        size={12}
+      />
+    );
+  } else if (!noPopover) {
+    return (
+      <Icon
+        name="chevrondown"
+        className="flex-align-right flex-no-shrink"
+        size={12}
+      />
+    );
+  }
+
+  return null;
+}
+
+WidgetStatusIcon.propTypes = {
+  isFullscreen: PropTypes.bool.isRequired,
+  hasValue: PropTypes.bool.isRequired,
+  noReset: PropTypes.bool.isRequired,
+  noPopover: PropTypes.bool.isRequired,
+  isFocused: PropTypes.bool.isRequired,
+  setValue: PropTypes.func.isRequired,
+};

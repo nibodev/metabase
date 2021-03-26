@@ -1,5 +1,3 @@
-/* @flow */
-
 import { t } from "ttag";
 import LineAreaBarChart from "../components/LineAreaBarChart.jsx";
 import { scatterRenderer } from "../lib/LineAreaBarRenderer";
@@ -21,10 +19,10 @@ export default class ScatterPlot extends LineAreaBarChart {
   static renderer = scatterRenderer;
 
   static settings = {
-    ...GRAPH_DATA_SETTINGS,
     ...GRAPH_BUBBLE_SETTINGS,
     ...GRAPH_GOAL_SETTINGS,
     ...GRAPH_COLORS_SETTINGS,
     ...GRAPH_AXIS_SETTINGS,
+    ...GRAPH_DATA_SETTINGS,
   };
 }

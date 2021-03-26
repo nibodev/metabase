@@ -1,5 +1,3 @@
-/* @flow */
-
 import React, { Component } from "react";
 import { connect } from "react-redux";
 import { titleize } from "inflection";
@@ -28,7 +26,7 @@ import { getUserIsAdmin } from "metabase/selectors/user";
 
 import MetabaseAnalytics from "metabase/lib/analytics";
 
-import type { Parameter, ParameterId } from "metabase/meta/types/Parameter";
+import type { Parameter, ParameterId } from "metabase-types/types/Parameter";
 import type {
   EmbeddableResource,
   EmbeddingParams,

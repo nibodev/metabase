@@ -1,13 +1,14 @@
 (ns metabase.pulse.render.body
-  (:require [hiccup.core :refer [h]]
-            [metabase.pulse.render
-             [color :as color]
-             [common :as common]
-             [datetime :as datetime]
-             [image-bundle :as image-bundle]
-             [sparkline :as sparkline]
-             [style :as style]
-             [table :as table]]
+  (:require [cheshire.core :as json]
+            [hiccup.core :refer [h]]
+            [medley.core :as m]
+            [metabase.pulse.render.color :as color]
+            [metabase.pulse.render.common :as common]
+            [metabase.pulse.render.datetime :as datetime]
+            [metabase.pulse.render.image-bundle :as image-bundle]
+            [metabase.pulse.render.sparkline :as sparkline]
+            [metabase.pulse.render.style :as style]
+            [metabase.pulse.render.table :as table]
             [metabase.types :as types]
             [metabase.util.i18n :refer [trs]]
             [schema.core :as s]))
@@ -28,8 +29,8 @@
 
 (defn show-in-table?
   "Should this column be shown in a rendered table in a Pulse?"
-  [{:keys [special_type visibility_type] :as column}]
-  (and (not (isa? special_type :type/Description))
+  [{:keys [semantic_type visibility_type] :as column}]
+  (and (not (isa? semantic_type :type/Description))
        (not (contains? #{:details-only :retired :sensitive} visibility_type))))
 
 (defn- count-displayed-columns
@@ -62,31 +63,50 @@
               :when remapped_from]
           [remapped_from col-idx])))
 
+(defn- column-name
+  "Returns first column name from a hierarchy of possible column names"
+  [card col]
+  (let [column-settings (some->> (get-in card [:visualization_settings :column_settings])
+                                 (m/map-keys (comp vec json/parse-string name)))]
+    (name (or (when-let [fr (:field_ref col)]
+                (get-in column-settings [["ref" (mapv #(if (keyword? %) (name %) %) fr)] :column_title]))
+              (get-in column-settings [["name" (:name col)] :column_title])
+              (:display_name col)
+              (:name col)))))
+
 (defn- query-results->header-row
   "Returns a row structure with header info from `cols`. These values are strings that are ready to be rendered as HTML"
-  [remapping-lookup cols include-bar?]
+  [remapping-lookup card cols include-bar?]
   {:row (for [maybe-remapped-col cols
               :when (show-in-table? maybe-remapped-col)
-              :let [{:keys [base_type special_type] :as col} (if (:remapped_to maybe-remapped-col)
-                                                               (nth cols (get remapping-lookup (:name maybe-remapped-col)))
-                                                               maybe-remapped-col)
-                    column-name (name (or (:display_name col) (:name col)))]
+              :let [{:keys [base_type semantic_type] :as col} (if (:remapped_to maybe-remapped-col)
+                                                                (nth cols (get remapping-lookup (:name maybe-remapped-col)))
+                                                                maybe-remapped-col)
+                    col-name (column-name card col)]
               ;; If this column is remapped from another, it's already
               ;; in the output and should be skipped
               :when (not (:remapped_from maybe-remapped-col))]
           (if (or (isa? base_type :type/Number)
-                  (isa? special_type :type/Number))
-            (common/->NumericWrapper column-name)
-            column-name))
+                  (isa? semantic_type :type/Number))
+            (common/->NumericWrapper col-name)
+            col-name))
    :bar-width (when include-bar? 99)})
+
+(defn- normalize-bar-value
+  "Normalizes bar-value into a value between 0 and 100, where 0 corresponds to `min-value` and 100 to `max-value`"
+  [bar-value min-value max-value]
+  (float
+   (/
+    (* (- (double bar-value) min-value)
+       100)
+    (- max-value min-value))))
 
 (s/defn ^:private query-results->row-seq
   "Returns a seq of stringified formatted rows that can be rendered into HTML"
-  [timezone-id :- (s/maybe s/Str) remapping-lookup cols rows bar-column max-value]
+  [timezone-id :- (s/maybe s/Str) remapping-lookup cols rows {:keys [bar-column min-value max-value]}]
   (for [row rows]
-    {:bar-width (when-let [bar-value (and bar-column (bar-column row))]
-                  ;; cast to double to avoid "Non-terminating decimal expansion" errors
-                  (float (* 100 (/ (double bar-value) max-value))))
+    {:bar-width (some-> (and bar-column (bar-column row))
+                        (normalize-bar-value min-value max-value))
      :row (for [[maybe-remapped-col maybe-remapped-row-cell] (map vector cols row)
                 :when (and (not (:remapped_from maybe-remapped-col))
                            (show-in-table? maybe-remapped-col))
@@ -99,12 +119,15 @@
 (s/defn ^:private prep-for-html-rendering
   "Convert the query results (`cols` and `rows`) into a formatted seq of rows (list of strings) that can be rendered as
   HTML"
-  [timezone-id :- (s/maybe s/Str) cols rows bar-column max-value column-limit]
-  (let [remapping-lookup (create-remapping-lookup cols)
-        limited-cols (take column-limit cols)]
-    (cons
-     (query-results->header-row remapping-lookup limited-cols bar-column)
-     (query-results->row-seq timezone-id remapping-lookup limited-cols (take rows-limit rows) bar-column max-value))))
+  ([timezone-id :- (s/maybe s/Str) card data column-limit]
+   (prep-for-html-rendering timezone-id card data column-limit {}))
+  ([timezone-id :- (s/maybe s/Str) card {:keys [cols rows]} column-limit
+    {:keys [bar-column min-value max-value] :as data-attributes}]
+   (let [remapping-lookup (create-remapping-lookup cols)
+         limited-cols (take column-limit cols)]
+     (cons
+      (query-results->header-row remapping-lookup card limited-cols bar-column)
+      (query-results->row-seq timezone-id remapping-lookup limited-cols (take rows-limit rows) data-attributes)))))
 
 (defn- strong-limit-text [number]
   [:strong {:style (style/style {:color style/color-gray-3})} (h (common/format-number number))])
@@ -166,7 +189,7 @@
                     (table/render-table
                      (color/make-color-selector data (:visualization_settings card))
                      (mapv :name (:cols data))
-                     (prep-for-html-rendering timezone-id cols rows nil nil cols-limit))
+                     (prep-for-html-rendering timezone-id card data cols-limit))
                     (render-truncation-warning cols-limit (count-displayed-columns cols) rows-limit (count rows))]]
     {:attachments
      nil
@@ -180,15 +203,20 @@
   [_ _ timezone-id :- (s/maybe s/Str) card {:keys [cols] :as data}]
   (let [[x-axis-rowfn y-axis-rowfn] (common/graphing-column-row-fns card data)
         rows                        (common/non-nil-rows x-axis-rowfn y-axis-rowfn (:rows data))
-        max-value                   (apply max (map y-axis-rowfn rows))]
+        row-values                  (map y-axis-rowfn rows)
+        min-value                   (min 0 (apply min row-values))
+        max-value                   (apply max row-values)]
     {:attachments
      nil
 
      :content
      [:div
       (table/render-table (color/make-color-selector data (:visualization_settings card))
+                          (normalize-bar-value 0 min-value max-value)
                           (mapv :name cols)
-                          (prep-for-html-rendering timezone-id cols rows y-axis-rowfn max-value 2))
+                          (prep-for-html-rendering timezone-id card data 2 {:bar-column y-axis-rowfn
+                                                                            :min-value  min-value
+                                                                            :max-value  max-value}))
       (render-truncation-warning 2 (count-displayed-columns cols) rows-limit (count rows))]}))
 
 (s/defmethod render :scalar :- common/RenderedPulseCard
@@ -204,7 +232,7 @@
   [_ render-type timezone-id card {:keys [rows cols] :as data}]
   (let [[x-axis-rowfn
          y-axis-rowfn] (common/graphing-column-row-fns card data)
-        rows           (sparkline/sparkline-rows timezone-id card data)
+        rows           (sparkline/cleaned-rows timezone-id card data)
         last-rows      (reverse (take-last 2 rows))
         values         (for [row last-rows]
                          (some-> row y-axis-rowfn common/format-number))

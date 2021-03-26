@@ -1,5 +1,3 @@
-/* @flow */
-
 import React, { Component } from "react";
 import { t } from "ttag";
 import { hasLatitudeAndLongitudeColumns } from "metabase/lib/schema_metadata";
@@ -16,7 +14,7 @@ import d3 from "d3";
 
 import L from "leaflet";
 
-import type { VisualizationProps } from "metabase/meta/types/Visualization";
+import type { VisualizationProps } from "metabase-types/types/Visualization";
 
 type Props = VisualizationProps;
 
@@ -76,7 +74,7 @@ export default class PinMap extends Component {
     };
   }
 
-  componentWillReceiveProps(newProps: Props) {
+  UNSAFE_componentWillReceiveProps(newProps: Props) {
     const SETTINGS_KEYS = [
       "map.latitude_column",
       "map.longitude_column",
@@ -85,7 +83,9 @@ export default class PinMap extends Component {
     if (
       newProps.series[0].data !== this.props.series[0].data ||
       !_.isEqual(
+        // $FlowFixMe
         _.pick(newProps.settings, ...SETTINGS_KEYS),
+        // $FlowFixMe
         _.pick(this.props.settings, ...SETTINGS_KEYS),
       )
     ) {
@@ -124,6 +124,7 @@ export default class PinMap extends Component {
           data: { cols, rows },
         },
       ],
+      onUpdateWarnings,
     } = props;
     const latitudeIndex = _.findIndex(
       cols,
@@ -138,11 +139,27 @@ export default class PinMap extends Component {
       col => col.name === settings["map.metric_column"],
     );
 
-    const points = rows.map(row => [
+    const allPoints = rows.map(row => [
       row[latitudeIndex],
       row[longitudeIndex],
       metricIndex >= 0 ? row[metricIndex] : 1,
     ]);
+
+    // only use points with numeric coordinates & metric
+    const points = allPoints.filter(
+      ([lat, lng, metric]) => lat != null && lng != null && metric != null,
+    );
+
+    const warnings = [];
+    const filteredRows = allPoints.length - points.length;
+    if (filteredRows > 0) {
+      warnings.push(
+        t`We filtered out ${filteredRows} row(s) containing null values.`,
+      );
+    }
+    if (onUpdateWarnings && warnings) {
+      onUpdateWarnings(warnings);
+    }
 
     const bounds = L.latLngBounds(points);
 

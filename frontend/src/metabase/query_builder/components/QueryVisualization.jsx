@@ -1,5 +1,3 @@
-/* @flow weak */
-
 import React, { Component } from "react";
 import { t } from "ttag";
 
@@ -15,18 +13,20 @@ import Utils from "metabase/lib/utils";
 import cx from "classnames";
 
 import Question from "metabase-lib/lib/Question";
-import type { Database } from "metabase/meta/types/Database";
-import type { TableMetadata } from "metabase/meta/types/Metadata";
-import type { DatasetQuery } from "metabase/meta/types/Card";
+import type Database from "metabase-lib/lib/metadata/Database";
+import type Table from "metabase-lib/lib/metadata/Table";
+import type { DatasetQuery } from "metabase-types/types/Card";
 
-import type { ParameterValues } from "metabase/meta/types/Parameter";
+import type { ParameterValues } from "metabase-types/types/Parameter";
+
+import { HARD_ROW_LIMIT } from "metabase/lib/query";
 
 type Props = {
   question: Question,
   originalQuestion: Question,
   result?: Object,
   databases?: Database[],
-  tableMetadata?: TableMetadata,
+  tableMetadata?: Table,
   tableForeignKeys?: [],
   tableForeignKeyReferences?: {},
   onUpdateVisualizationSettings: any => void,
@@ -62,7 +62,7 @@ export default class QueryVisualization extends Component {
 
   static defaultProps = {
     // NOTE: this should be more dynamic from the backend, it's set based on the query lang
-    maxTableRows: 2000,
+    maxTableRows: HARD_ROW_LIMIT,
   };
 
   _getStateFromProps(props) {
@@ -72,7 +72,7 @@ export default class QueryVisualization extends Component {
     };
   }
 
-  componentWillReceiveProps(nextProps) {
+  UNSAFE_componentWillReceiveProps(nextProps) {
     // whenever we are told that we are running a query lets update our understanding of the "current" query
     if (nextProps.isRunning) {
       this.setState(this._getStateFromProps(nextProps));
@@ -121,9 +121,7 @@ export default class QueryVisualization extends Component {
             "Visualization--loading": isRunning,
           })}
         >
-          {result && result.error && isResultDirty ? null : result &&
-            result.error &&
-            !isResultDirty ? (
+          {result && result.error ? (
             <VisualizationError
               className="spread"
               error={result.error}

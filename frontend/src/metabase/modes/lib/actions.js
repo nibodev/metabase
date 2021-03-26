@@ -1,25 +1,19 @@
-/* @flow weak */
-
 import moment from "moment";
 
 import {
   rangeForValue,
-  fieldRefForColumnWithLegacyFallback,
+  fieldRefForColumn,
+  fieldRefWithOption,
 } from "metabase/lib/dataset";
 import { isDate, isNumber } from "metabase/lib/schema_metadata";
 
-import type {
-  Breakout,
-  LocalFieldReference,
-  ForeignFieldReference,
-  FieldLiteral,
-} from "metabase/meta/types/Query";
-import type { Column } from "metabase/meta/types/Dataset";
-import type { DimensionValue } from "metabase/meta/types/Visualization";
+import type { Breakout } from "metabase-types/types/Query";
+import type { DimensionValue } from "metabase-types/types/Visualization";
 import { parseTimestamp } from "metabase/lib/time";
 
 import Question from "metabase-lib/lib/Question";
 import StructuredQuery from "metabase-lib/lib/queries/StructuredQuery";
+import { FieldDimension } from "metabase-lib/lib/Dimension";
 
 export { drillDownForDimensions } from "./drilldown";
 
@@ -50,7 +44,7 @@ export function filter(question: Question, operator, column, value): ?Question {
   const query = question.query();
   if (query instanceof StructuredQuery) {
     return query
-      .filter([operator, getFieldRefFromColumn(column), value])
+      .filter([operator, fieldRefForColumn(column), value])
       .question();
   }
 }
@@ -64,7 +58,7 @@ export function pivot(
   if (query instanceof StructuredQuery) {
     for (const dimension of dimensions) {
       query = drillFilter(query, dimension.value, dimension.column);
-      const dimensionRef = getFieldRefFromColumn(dimension.column);
+      const dimensionRef = fieldRefForColumn(dimension.column);
       for (let i = 0; i < query.breakouts().length; i++) {
         const breakout = query.breakouts()[i];
         if (breakout.dimension().isSameBaseDimension(dimensionRef)) {
@@ -84,10 +78,12 @@ export function distribution(question: Question, column): ?Question {
   const query = question.query();
   if (query instanceof StructuredQuery) {
     const breakout = isDate(column)
-      ? ["datetime-field", getFieldRefFromColumn(column), "month"]
+      ? fieldRefWithOption(fieldRefForColumn(column), "temporal-unit", "month")
       : isNumber(column)
-      ? ["binning-strategy", getFieldRefFromColumn(column), "default"]
-      : getFieldRefFromColumn(column);
+      ? fieldRefWithOption(fieldRefForColumn(column), "binning", {
+          strategy: "default",
+        })
+      : fieldRefForColumn(column);
     return query
       .clearAggregations()
       .clearBreakouts()
@@ -129,6 +125,17 @@ export function drillUnderlyingRecords(
 
 // STRUCTURED QUERY UTILITIES
 
+const fieldRefWithTemporalUnit = (mbqlClause, unit) => {
+  const dimension = FieldDimension.parseMBQLOrWarn(mbqlClause);
+  if (dimension) {
+    return dimension.withTemporalUnit(unit).mbql();
+  }
+  return mbqlClause;
+};
+
+const fieldRefWithTemporalUnitForColumn = (column, unit) =>
+  fieldRefWithTemporalUnit(fieldRefForColumn(column), unit);
+
 export function drillFilter(
   query: StructuredQuery,
   value,
@@ -138,15 +145,15 @@ export function drillFilter(
   if (isDate(column)) {
     filter = [
       "=",
-      ["datetime-field", getFieldRefFromColumn(column), column.unit],
+      fieldRefWithTemporalUnitForColumn(column, column.unit),
       parseTimestamp(value, column.unit).format(),
     ];
   } else {
     const range = rangeForValue(value, column);
     if (range) {
-      filter = ["between", getFieldRefFromColumn(column), range[0], range[1]];
+      filter = ["between", fieldRefForColumn(column), range[0], range[1]];
     } else {
-      filter = ["=", getFieldRefFromColumn(column), value];
+      filter = ["=", fieldRefForColumn(column), value];
     }
   }
 
@@ -196,7 +203,7 @@ export function updateDateTimeFilter(
   start,
   end,
 ): StructuredQuery {
-  const fieldRef = getFieldRefFromColumn(column);
+  const fieldRef = fieldRefForColumn(column);
   start = moment(start);
   end = moment(end);
   if (column.unit) {
@@ -216,7 +223,10 @@ export function updateDateTimeFilter(
     }
 
     // update the breakout
-    query = addOrUpdateBreakout(query, ["datetime-field", fieldRef, unit]);
+    query = addOrUpdateBreakout(
+      query,
+      fieldRefWithTemporalUnit(fieldRef, unit),
+    );
 
     // round to start of the original unit
     start = start.startOf(column.unit);
@@ -229,14 +239,14 @@ export function updateDateTimeFilter(
       // is the start and end are the same (in whatever the original unit was) then just do an "="
       return addOrUpdateFilter(query, [
         "=",
-        ["datetime-field", fieldRef, column.unit],
+        fieldRefWithTemporalUnit(fieldRef, column.unit),
         start.format(),
       ]);
     } else {
       // otherwise do a between
       return addOrUpdateFilter(query, [
         "between",
-        ["datetime-field", fieldRef, column.unit],
+        fieldRefWithTemporalUnit(fieldRef, column.unit),
         start.format(),
         end.format(),
       ]);
@@ -259,8 +269,8 @@ export function updateLatLonFilter(
 ): StructuredQuery {
   return addOrUpdateFilter(query, [
     "inside",
-    getFieldRefFromColumn(latitudeColumn),
-    getFieldRefFromColumn(longitudeColumn),
+    fieldRefForColumn(latitudeColumn),
+    fieldRefForColumn(longitudeColumn),
     bounds.getNorth(),
     bounds.getWest(),
     bounds.getSouth(),
@@ -274,42 +284,6 @@ export function updateNumericFilter(
   start,
   end,
 ): StructuredQuery {
-  const fieldRef = getFieldRefFromColumn(column);
+  const fieldRef = fieldRefForColumn(column);
   return addOrUpdateFilter(query, ["between", fieldRef, start, end]);
-}
-
-// COLUMN UTILITIES
-
-export function getFieldRefFromColumn(
-  column: Column,
-): LocalFieldReference | ForeignFieldReference | FieldLiteral {
-  return fieldRefForColumnWithLegacyFallback(
-    column,
-    c => getFieldRefFromColumn_LEGACY(c),
-    "actions::getFieldRefFromColumn",
-  );
-}
-
-function getFieldRefFromColumn_LEGACY(
-  column: Column,
-): LocalFieldReference | ForeignFieldReference | FieldLiteral {
-  if (column.expression_name) {
-    return ["expression", column.expression_name];
-  }
-
-  const fieldId = column.id;
-  if (fieldId == null) {
-    return null;
-    // throw new Error(
-    //   "getFieldRefFromColumn expects non-null fieldId or column with non-null id",
-    // );
-  }
-  if (Array.isArray(fieldId)) {
-    // NOTE: sometimes col.id is a field reference (e.x. nested queries), if so just return it
-    return fieldId;
-  } else if (column.fk_field_id != null) {
-    return ["fk->", ["field-id", column.fk_field_id], ["field-id", fieldId]];
-  } else {
-    return ["field-id", fieldId];
-  }
 }

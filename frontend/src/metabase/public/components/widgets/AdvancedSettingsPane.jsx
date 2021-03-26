@@ -1,5 +1,3 @@
-/* @flow */
-
 import React from "react";
 import { t } from "ttag";
 import cx from "classnames";
@@ -25,7 +23,7 @@ import type {
   EmbeddableResource,
   EmbeddingParams,
 } from "metabase/public/lib/types";
-import type { Parameter, ParameterId } from "metabase/meta/types/Parameter";
+import type { Parameter, ParameterId } from "metabase-types/types/Parameter";
 
 type Props = {
   className?: string,
