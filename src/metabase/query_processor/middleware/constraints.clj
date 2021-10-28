@@ -4,7 +4,7 @@
 
 (def ^:private max-results-bare-rows
   "Maximum number of rows to return specifically on :rows type queries via the API."
-  10000)
+  1000000)
 
 (def ^:private max-results
   "General maximum number of rows to return from an API query."
